@@ -91,6 +91,7 @@ const seed=()=>({
  ],
  payments:[{id:"p1",invoiceId:"INV-1042",amount:3850,date:date(-4),method:"Check"}],
  hours:[{id:"h1",employeeId:"e1",jobId:"j1",date:date(-1),hours:6.5}],
+ appointments:[{id:"a1",jobId:"j1",date:date(1),time:"09:00",location:"Customer property",notes:"Review work plan"}],
  activity:[{at:new Date().toISOString(),text:"Version 2.4 preview initialized"}]
 });
 function cleanImported(x){
@@ -106,9 +107,10 @@ function cleanImported(x){
  invoices:x.invoices.slice(0,3000),
  payments:Array.isArray(x.payments)?x.payments.slice(0,10000):[],
  hours:Array.isArray(x.hours)?x.hours.slice(0,10000):[],
+ appointments:Array.isArray(x.appointments)?x.appointments.slice(0,3000):[],
  activity:Array.isArray(x.activity)?x.activity.slice(0,80):[]
  };
- for(const k of ["customers","jobs","employees","estimates","invoices","payments","hours"])for(const v of obj[k])if(!v||typeof v!=="object"||!v.id||typeof v.id==="object")throw Error("A record is missing a valid identifier.");
+ for(const k of ["customers","jobs","employees","estimates","invoices","payments","hours","appointments"])for(const v of obj[k])if(!v||typeof v!=="object"||!v.id||typeof v.id==="object")throw Error("A record is missing a valid identifier.");
  return obj;
 }
 function load(){
@@ -189,8 +191,19 @@ function showJobs(){
  return panel(j?"Edit job":"Create job",db.customers.length?formWrap("job",form,j?"Save job":"Create job"):'<p>Add a customer first.</p>')+panel("Jobs",filter+table(["Job","Customer","Scheduled","Status","Amount","Action"],rows));
 }
 function showSchedule(){
+ const form='<div class="formgrid">'+
+ selectField("Job","jobId",opts(db.jobs))+
+ field("Appointment date","date",date(1),"date",true)+
+ '<label>Appointment time<input name="time" type="time" required value="09:00"></label>'+
+ field("Location","location","")+
+ field("Notes","notes","")+
+ '</div>';
+ const rows=db.appointments.slice().sort((a,b)=>(a.date+" "+a.time).localeCompare(b.date+" "+b.time)).map(a=>row([fmtDate(a.date),safe(a.time),safe(job(a.jobId)?.title||"Unknown job"),safe(a.location),safe(a.notes)]));
  const upcoming=db.jobs.filter(j=>j.scheduled).slice().sort((a,b)=>String(a.scheduled).localeCompare(String(b.scheduled)));
- return panel("Schedule and assignments",table(["Date","Job","Customer","Assigned to","Status"],upcoming.map(j=>row([fmtDate(j.scheduled),safe(j.title),safe(customerName(j.customerId)),safe(employeeName(j.employeeId)),pill(j.status)])))+'<p class="note">To schedule or reassign a job, open Operations → Jobs and select Edit.</p>');
+ return panel("Schedule an appointment",db.jobs.length?formWrap("appointment",form,"Add appointment"):'<p>Create a job first.</p>')+
+ panel("Appointments",table(["Date","Time","Job","Location","Notes"],rows))+
+ panel("Scheduled jobs",table(["Date","Job","Customer","Assigned to","Status"],upcoming.map(j=>row([fmtDate(j.scheduled),safe(j.title),safe(customerName(j.customerId)),safe(employeeName(j.employeeId)),pill(j.status)]))))+
+ '<p class="note">This is a local demo calendar, not Google Calendar synchronization.</p>';
 }
 function showEmployees(){
  const e=edit?.kind==="employee"?employee(edit.id):null;
@@ -332,6 +345,12 @@ document.addEventListener("submit",event=>{
    const rec={customerId,title,status,amount:amount(d,"amount"),scheduled:formValue(d,"scheduled",20),employeeId,notes:formValue(d,"notes",500)};
    if(edit?.kind==="job"){Object.assign(job(edit.id),rec);complete("Job updated: "+title)}
    else{db.jobs.push({id:id("j"),...rec});complete("Job created: "+title)}return;
+  }
+  if(kind==="appointment"){
+   const jobId=required(d,"jobId"),dte=required(d,"date",20),time=required(d,"time",20);
+   if(!job(jobId)||!/^\d{4}-\d{2}-\d{2}$/.test(dte)||!/^\d{2}:\d{2}$/.test(time))throw Error("Enter a valid job, date and time.");
+   db.appointments.push({id:id("a"),jobId,date:dte,time,location:formValue(d,"location",200),notes:formValue(d,"notes",250)});
+   complete("Appointment scheduled for "+dte);return;
   }
   if(kind==="hours"){
    const employeeId=required(d,"employeeId"),jobId=required(d,"jobId"),h=num(d.get("hours"));
