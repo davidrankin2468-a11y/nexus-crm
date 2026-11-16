@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b1523">
-<title>Nexus CRM 2.3 · Interactive Preview</title>
+<title>Nexus CRM 2.4 · Interactive Preview</title>
 <style>
 :root{color-scheme:dark;--bg:#0b1523;--side:#101f31;--panel:#17283b;--line:#29465a;--muted:#a0b4c3;--green:#a3f27b;--text:#eff6f9}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,Arial,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}
@@ -31,108 +31,343 @@ button.primary{background:var(--green);border:0;color:#0a1a1a;padding:10px 14px;
 #stage{min-height:200px}.note{border-left:3px solid var(--green);padding:7px 11px;color:var(--muted);margin:16px 0}
 @media(max-width:920px){.grid{grid-template-columns:repeat(2,1fr)}.app{grid-template-columns:190px minmax(0,1fr)}}
 @media(max-width:650px){.app{display:block}aside{padding:12px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding:5px}.navbox{display:flex;gap:3px;overflow:auto}.nav{width:auto;white-space:nowrap;padding:9px;font-size:13px}.sidebar-foot{display:none}main{padding:18px}.top h1{font-size:26px}.formgrid{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{padding:12px}.metric b{font-size:20px}}
+
+/* Version 2.4 usability polish */
+.panel h2{letter-spacing:.1px}
+.activity{border-bottom:1px solid var(--line);padding:10px 0}
+.activity:last-child{border-bottom:none}
+.status{white-space:nowrap}
+.primary:disabled{opacity:.6;cursor:not-allowed}
+.formgrid label{min-width:0}
+input:disabled{opacity:.65}
+@media(max-width:650px){.flex button{flex-shrink:0} .grid{gap:8px} .panel{padding:15px} .tab{padding:9px 12px}}
 </style>
-<!-- Cloudflare deployment initialized for Nexus CRM 2.3 -->
+<!-- Cloudflare deployment initialized for Nexus CRM 2.4 -->
 </head>
 <body>
 <div class="app">
-<aside><div class="brand">◈ NEXUS <span>CRM</span></div><div class="navbox" id="nav" role="navigation" aria-label="CRM main tabs"></div><div class="sidebar-foot">Nexus Software Solutions<br>Version 2.3 · Live Design Preview</div></aside>
-<main><div class="top"><div><div class="eyebrow">Nexus Business Suite</div><h1 id="heading">Dashboard</h1><p class="muted" id="intro">Manage your business in one place</p></div><span class="tag">● Demo Mode · v2.3</span></div>
+<aside><div class="brand">◈ NEXUS <span>CRM</span></div><div class="navbox" id="nav" role="navigation" aria-label="CRM main tabs"></div><div class="sidebar-foot">Nexus Software Solutions<br>Version 2.4 · Live Design Preview</div></aside>
+<main><div class="top"><div><div class="eyebrow">Nexus Business Suite</div><h1 id="heading">Dashboard</h1><p class="muted" id="intro">Manage your business in one place</p></div><span class="tag">● Interactive browser preview · v2.4</span></div>
 <div class="alert">This is a preview with fictional sample records. Changes here are saved only in this browser; they are not sent to your Windows CRM or a cloud database.</div>
 <div class="tabs" id="tabs" aria-label="Section tools"></div><div id="stage" aria-live="polite"></div>
 </main></div>
 <script>
+
 "use strict";
-const STORAGE="nexus-crm-demo-2.3",statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const sections={"Dashboard":["Overview","Recent Activity"],"Customers":["Directory","Customer History"],"Operations":["Jobs","Schedule","Employees"],"Finance":["Estimates","Invoices","Payments","Reports"],"Management":["Company Settings","Security","Backups","Cloud Sync","Licensing"]};
-const intro={"Dashboard":"A live overview of your business","Customers":"Customer directory and contact information","Operations":"Jobs, schedules and team activity","Finance":"Estimates, invoices and payments","Management":"Company settings and administrative tools"};
-const starter=()=>({customers:[{id:1,name:"Olivia Martinez",email:"olivia@example.com",phone:"555-0102",notes:"Garden and landscape work"},{id:2,name:"Harper Construction",email:"harper@example.com",phone:"555-0103",notes:"Residential construction"},{id:3,name:"Cedar Grove Homes",email:"cedar@example.com",phone:"555-0104",notes:"Painting projects"}],jobs:[{id:1,customerId:1,title:"Garden renovation",status:"In Progress",amount:3850},{id:2,customerId:3,title:"Interior repaint",status:"Scheduled",amount:2150},{id:3,customerId:2,title:"Deck repair",status:"Planned",amount:1275}],invoices:[{id:"INV-1042",customer:"Harper Construction",amount:3850,status:"Paid"},{id:"INV-1043",customer:"Olivia Martinez",amount:1275,status:"Unpaid"},{id:"INV-1044",customer:"Cedar Grove Homes",amount:2150,status:"Unpaid"}],activity:["CRM 2.3 preview loaded","Garden renovation is in progress","Interior repaint scheduled"]});
-let db;
-try{const old=JSON.parse(localStorage.getItem(STORAGE));db=(old&&Array.isArray(old.customers)&&Array.isArray(old.jobs)&&Array.isArray(old.invoices))?old:starter()}catch(e){db=starter()}
-let section="Dashboard",sub="Overview",search="",statusFilter="",editing=null;
+const VERSION="2.4", STORAGE="nexus-crm-demo-2.4", LEGACY="nexus-crm-demo-2.3";
+const STATUSES=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
+const TABS={"Dashboard":["Overview","Recent Activity"],"Customers":["Directory","Customer History"],"Operations":["Jobs","Schedule","Employees","Time Tracking"],"Finance":["Estimates","Invoices","Payments","Reports"],"Management":["Company Settings","Security","Backups","Cloud Sync","Licensing"]};
+const DESCRIPTIONS={"Dashboard":"Your company at a glance","Customers":"Profiles, contact details, and job history","Operations":"Jobs, scheduling, employees and hours","Finance":"Estimates, invoices, payments and reports","Management":"Settings, browser backups and system readiness"};
 const $=id=>document.getElementById(id);
-const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const cash=v=>Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
-const findCustomer=id=>db.customers.find(c=>c.id===Number(id));
-const userCustomer=id=>findCustomer(id)?.name||"Unknown customer";
-function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(db))}catch(e){}}
-function activity(msg){db.activity.unshift(msg);db.activity=db.activity.slice(0,25)}
-function table(head,rows){return '<div class="tablewrap"><table><thead><tr>'+head.map(h=>'<th>'+safe(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>'}
-function metric(label,value){return '<div class="metric">'+safe(label)+'<b>'+safe(value)+'</b></div>'}
+const safe=x=>String(x==null?"":x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const usd=x=>Number(x||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
+const num=x=>Number.isFinite(Number(x))?Number(x):0;
+const date=offset=>{const d=new Date();d.setDate(d.getDate()+offset);return d.toISOString().slice(0,10)};
+const id=prefix=>prefix+"_"+((typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"_"+Math.random().toString(36).slice(2));
+const seed=()=>({
+ schema:24,
+ company:{name:"Nexus Demo Company",industry:"Field Services",email:"contact@example.com",phone:"555-0100"},
+ customers:[
+ {id:"c1",name:"Olivia Martinez",email:"olivia@example.com",phone:"555-0102",notes:"Landscape maintenance",status:"Active"},
+ {id:"c2",name:"Harper Construction",email:"harper@example.com",phone:"555-0103",notes:"Residential construction",status:"Active"},
+ {id:"c3",name:"Cedar Grove Homes",email:"cedar@example.com",phone:"555-0104",notes:"Interior and exterior painting",status:"Active"}
+ ],
+ employees:[{id:"e1",name:"Alex Morgan",role:"Crew Lead",email:"alex@example.com",status:"Active"},
+ {id:"e2",name:"Jordan Taylor",role:"Painter",email:"jordan@example.com",status:"Active"}],
+ jobs:[
+ {id:"j1",customerId:"c1",title:"Garden renovation",status:"In Progress",amount:3850,scheduled:date(1),employeeId:"e1",notes:"Front yard planting"},
+ {id:"j2",customerId:"c3",title:"Interior repaint",status:"Scheduled",amount:2150,scheduled:date(3),employeeId:"e2",notes:"Kitchen and living room"},
+ {id:"j3",customerId:"c2",title:"Deck repair",status:"Planned",amount:1275,scheduled:date(7),employeeId:"",notes:""}
+ ],
+ estimates:[
+ {id:"EST-1001",customerId:"c2",description:"Deck repair quote",amount:1275,status:"Draft",created:date(-2)},
+ {id:"EST-1002",customerId:"c3",description:"Additional painting",amount:875,status:"Sent",created:date(-1)}
+ ],
+ invoices:[
+ {id:"INV-1042",customerId:"c2",description:"Construction milestone",amount:3850,due:date(-3),created:date(-20)},
+ {id:"INV-1043",customerId:"c1",description:"Landscape deposit",amount:1275,due:date(14),created:date(-1)},
+ {id:"INV-1044",customerId:"c3",description:"Interior paint phase",amount:2150,due:date(10),created:date(-2)}
+ ],
+ payments:[{id:"p1",invoiceId:"INV-1042",amount:3850,date:date(-4),method:"Check"}],
+ hours:[{id:"h1",employeeId:"e1",jobId:"j1",date:date(-1),hours:6.5}],
+ activity:[{at:new Date().toISOString(),text:"Version 2.4 preview initialized"}]
+});
+function cleanImported(x){
+ if(!x||typeof x!=="object"||!Array.isArray(x.customers)||!Array.isArray(x.jobs)||!Array.isArray(x.invoices))throw Error("This is not a valid Nexus CRM preview backup.");
+ const fallback=seed();
+ const obj={
+ schema:24,
+ company:Object.assign({},fallback.company,x.company&&typeof x.company==="object"?x.company:{}),
+ customers:x.customers.slice(0,2000),
+ jobs:x.jobs.slice(0,3000),
+ employees:Array.isArray(x.employees)?x.employees.slice(0,1000):fallback.employees,
+ estimates:Array.isArray(x.estimates)?x.estimates.slice(0,3000):[],
+ invoices:x.invoices.slice(0,3000),
+ payments:Array.isArray(x.payments)?x.payments.slice(0,10000):[],
+ hours:Array.isArray(x.hours)?x.hours.slice(0,10000):[],
+ activity:Array.isArray(x.activity)?x.activity.slice(0,80):[]
+ };
+ for(const k of ["customers","jobs","employees","estimates","invoices","payments","hours"])for(const v of obj[k])if(!v||typeof v!=="object"||!v.id||typeof v.id==="object")throw Error("A record is missing a valid identifier.");
+ return obj;
+}
+function load(){
+ try{
+  const s=localStorage.getItem(STORAGE);if(s)return cleanImported(JSON.parse(s));
+  const old=localStorage.getItem(LEGACY);
+  if(old){
+   const x=JSON.parse(old);if(Array.isArray(x.customers)&&Array.isArray(x.jobs)&&Array.isArray(x.invoices)){
+    const s=seed();
+    s.customers=x.customers.map(c=>({id:String(c.id),name:c.name||"",email:c.email||"",phone:c.phone||"",notes:c.notes||"",status:"Active"}));
+    s.jobs=x.jobs.map(j=>({id:String(j.id),customerId:String(j.customerId),title:j.title||"",status:STATUSES.includes(j.status)?j.status:"Planned",amount:num(j.amount),scheduled:"",employeeId:"",notes:""}));
+    s.invoices=x.invoices.map(i=>({id:String(i.id),customerId:String((s.customers.find(c=>c.name===i.customer)?.id)||""),description:"Imported demo invoice",amount:num(i.amount),due:"",created:date(0)}));
+    s.payments=x.invoices.filter(i=>i.status==="Paid").map(i=>({id:id("p"),invoiceId:String(i.id),amount:num(i.amount),date:date(0),method:"Demo payment"}));
+    s.activity=[{at:new Date().toISOString(),text:"Migrated preview records from version 2.3"}];
+    return s;
+   }
+  }
+ }catch(e){console.warn("Unable to load browser preview data",e)}
+ return seed();
+}
+let db=load(),mainTab="Dashboard",subTab="Overview",edit=null,customerSearch="",jobFilter="";
+function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(db))}catch(e){alert("Your browser cannot save this demo. Check storage permissions.")}}
+function logActivity(txt){db.activity.unshift({at:new Date().toISOString(),text:String(txt).slice(0,240)});db.activity=db.activity.slice(0,80)}
+function customer(cid){return db.customers.find(x=>String(x.id)===String(cid))}
+function employee(eid){return db.employees.find(x=>String(x.id)===String(eid))}
+function job(jid){return db.jobs.find(x=>String(x.id)===String(jid))}
+function invoice(iid){return db.invoices.find(x=>String(x.id)===String(iid))}
+function customerName(cid){return customer(cid)?.name||"Unknown customer"}
+function employeeName(eid){return employee(eid)?.name||"Unassigned"}
+function paid(iid){return db.payments.filter(p=>String(p.invoiceId)===String(iid)).reduce((s,p)=>s+num(p.amount),0)}
+function balance(inv){return Math.max(0,Math.round((num(inv.amount)-paid(inv.id))*100)/100)}
+function invoiceStatus(inv){return balance(inv)<0.005?"Paid":paid(inv.id)>0?"Partial":"Unpaid"}
+function formValue(d,key,max=250){return String(d.get(key)||"").trim().slice(0,max)}
+function required(d,key,max=250){const s=formValue(d,key,max);if(!s)throw Error("Please complete the "+key+" field.");return s}
+function amount(d,key){const v=Number(d.get(key));if(!Number.isFinite(v)||v<0||v>1000000000)throw Error("Enter a valid nonnegative amount.");return Math.round(v*100)/100}
+function opts(list,selected,empty){return (empty?'<option value="">'+safe(empty)+'</option>':"")+list.map(x=>'<option value="'+safe(x.id)+'" '+(String(x.id)===String(selected)?"selected":"")+'>'+safe(x.name||x.title||x.id)+'</option>').join("")}
+function statusOpts(value){return STATUSES.map(s=>'<option '+(s===value?"selected":"")+' value="'+safe(s)+'">'+safe(s)+'</option>').join("")}
+function table(headers,rows){return '<div class="tablewrap"><table><thead><tr>'+headers.map(h=>'<th>'+safe(h)+'</th>').join("")+'</tr></thead><tbody>'+((rows.length)?rows.join(""):'<tr><td colspan="'+headers.length+'" class="empty">No records yet</td></tr>')+'</tbody></table></div>'}
+function metric(label,value){return '<div class="metric"><span>'+safe(label)+'</span><b>'+safe(value)+'</b></div>'}
+function panel(title,html){return '<section class="panel"><h2>'+safe(title)+'</h2>'+html+'</section>'}
+function field(label,name,value="",type="text",required=false){return '<label>'+safe(label)+'<input name="'+safe(name)+'" type="'+safe(type)+'" value="'+safe(value)+'" maxlength="'+(type==="email"?200:250)+'" '+(required?"required":"")+'></label>'}
+function selectField(label,name,html){return '<label>'+safe(label)+'<select name="'+safe(name)+'">'+html+'</select></label>'}
+function formWrap(name,form,button){return '<form data-form="'+safe(name)+'">'+form+'<p class="flex"><button class="primary" type="submit">'+safe(button)+'</button>'+(edit?'<button class="secondary" type="button" data-action="cancel">Cancel editing</button>':"")+'</p></form>'}
+function row(cells){return '<tr>'+cells.map(x=>'<td>'+x+'</td>').join("")+'</tr>'}
+function pill(status){return '<span class="status">'+safe(status)+'</span>'}
+function fmtDate(d){if(!d)return"Not scheduled";const v=new Date(d+"T12:00:00");return isNaN(v.getTime())?safe(d):v.toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"})}
+function showDashboard(){
+ if(subTab==="Recent Activity")return panel("Recent activity",db.activity.map(a=>'<p class="activity"><span class="muted">'+safe(new Date(a.at||Date.now()).toLocaleString())+'</span> · '+safe(a.text)+'</p>').join("")||'<p>No activity yet</p>');
+ const unpaid=db.invoices.reduce((s,i)=>s+balance(i),0);
+ const received=db.payments.reduce((s,p)=>s+num(p.amount),0);
+ const jobRows=db.jobs.slice().sort((a,b)=>String(a.scheduled||"9999").localeCompare(String(b.scheduled||"9999"))).slice(0,8).map(j=>row([safe(j.title),safe(customerName(j.customerId)),fmtDate(j.scheduled),pill(j.status)]));
+ return '<div class="grid">'+metric("Customers",db.customers.length)+metric("Open jobs",db.jobs.filter(j=>!["Completed","Cancelled"].includes(j.status)).length)+metric("Recorded payments",usd(received))+metric("Outstanding invoices",usd(unpaid))+'</div>'+panel("Upcoming work",table(["Job","Customer","Scheduled","Status"],jobRows))+'<p class="note">These figures are based on fictional browser records, not banking data or a cloud database.</p>';
+}
+function showCustomers(){
+ if(subTab==="Customer History"){
+  return panel("Customer job history",table(["Customer","Job","Status","Amount"],db.jobs.map(j=>row([safe(customerName(j.customerId)),safe(j.title),pill(j.status),usd(j.amount)]))));
+ }
+ const c=edit?.kind==="customer"?customer(edit.id):null;
+ const entry='<div class="formgrid">'+field("Customer / company name","name",c?.name||"","text",true)+field("Email","email",c?.email||"","email")+field("Phone","phone",c?.phone||"")+field("Notes","notes",c?.notes||"")+'</div>';
+ const filtered=db.customers.filter(c=>(c.name+" "+c.email+" "+c.phone).toLowerCase().includes(customerSearch.toLowerCase()));
+ const searchForm='<form data-form="customer-search" class="flex"><label style="flex:1;min-width:190px">Search customers<input name="search" value="'+safe(customerSearch)+'" placeholder="Name, email or phone"></label><button class="secondary" type="submit">Search</button><button class="secondary" type="button" data-action="clear-customer-search">Clear</button></form>';
+ const rows=filtered.map(c=>row([safe(c.name),safe(c.email),safe(c.phone),safe(c.status||"Active"),'<button class="secondary small" data-edit="customer" data-id="'+safe(c.id)+'">Edit</button>']));
+ return panel(c?"Edit customer":"Add customer",formWrap("customer",entry,c?"Save customer":"Add customer"))+panel("Customer directory",searchForm+'<p class="muted">'+filtered.length+' customers</p>'+table(["Customer","Email","Phone","Status","Action"],rows));
+}
+function showJobs(){
+ const j=edit?.kind==="job"?job(edit.id):null;
+ const form='<div class="formgrid">'+selectField("Customer","customerId",opts(db.customers,j?.customerId))+
+ field("Job title","title",j?.title||"","text",true)+
+ '<label>Estimated amount ($)<input name="amount" type="number" min="0" max="1000000000" step=".01" required value="'+safe(j?.amount??0)+'"></label>'+
+ field("Scheduled date","scheduled",j?.scheduled||"","date")+
+ selectField("Assigned employee","employeeId",opts(db.employees,j?.employeeId,"Unassigned"))+
+ selectField("Status","status",statusOpts(j?.status||"Planned"))+
+ field("Notes","notes",j?.notes||"")+'</div>';
+ const filtered=db.jobs.filter(j=>!jobFilter||j.status===jobFilter);
+ const filter='<form data-form="job-filter" class="flex">'+selectField("Status","status",'<option value="">All statuses</option>'+STATUSES.map(s=>'<option value="'+s+'" '+(s===jobFilter?"selected":"")+'>'+s+'</option>').join(""))+'<button class="secondary" type="submit">Apply filter</button><button class="secondary" type="button" data-action="clear-job-filter">Clear</button></form>';
+ const rows=filtered.map(j=>row([safe(j.title),safe(customerName(j.customerId)),fmtDate(j.scheduled),pill(j.status),usd(j.amount),'<button class="secondary small" data-edit="job" data-id="'+safe(j.id)+'">Edit</button>']));
+ return panel(j?"Edit job":"Create job",db.customers.length?formWrap("job",form,j?"Save job":"Create job"):'<p>Add a customer first.</p>')+panel("Jobs",filter+table(["Job","Customer","Scheduled","Status","Amount","Action"],rows));
+}
+function showSchedule(){
+ const upcoming=db.jobs.filter(j=>j.scheduled).slice().sort((a,b)=>String(a.scheduled).localeCompare(String(b.scheduled)));
+ return panel("Schedule and assignments",table(["Date","Job","Customer","Assigned to","Status"],upcoming.map(j=>row([fmtDate(j.scheduled),safe(j.title),safe(customerName(j.customerId)),safe(employeeName(j.employeeId)),pill(j.status)])))+'<p class="note">To schedule or reassign a job, open Operations → Jobs and select Edit.</p>');
+}
+function showEmployees(){
+ const e=edit?.kind==="employee"?employee(edit.id):null;
+ const form='<div class="formgrid">'+field("Employee name","name",e?.name||"","text",true)+field("Role","role",e?.role||"")+field("Email","email",e?.email||"","email")+
+ selectField("Status","status",["Active","Inactive"].map(x=>'<option value="'+x+'" '+(x===(e?.status||"Active")?"selected":"")+'>'+x+'</option>').join(""))+'</div>';
+ return panel(e?"Edit employee":"Add employee",formWrap("employee",form,e?"Save employee":"Add employee"))+panel("Employee directory",table(["Name","Role","Email","Status","Action"],db.employees.map(e=>row([safe(e.name),safe(e.role),safe(e.email),pill(e.status||"Active"),'<button class="secondary small" data-edit="employee" data-id="'+safe(e.id)+'">Edit</button>']))));
+}
+function showHours(){
+ const form='<div class="formgrid">'+selectField("Employee","employeeId",opts(db.employees))+selectField("Job","jobId",opts(db.jobs))+
+ field("Work date","date",date(0),"date",true)+
+ '<label>Hours worked<input name="hours" type="number" required min=".25" max="24" step=".25" value="8"></label></div>';
+ const total=db.hours.reduce((s,h)=>s+num(h.hours),0);
+ return panel("Record work hours",db.jobs.length&&db.employees.length?formWrap("hours",form,"Add time entry"):'<p>Add an employee and a job first.</p>')+
+ panel("Time entries · "+total.toFixed(2)+" total hours",table(["Date","Employee","Job","Hours"],db.hours.slice().reverse().map(h=>row([fmtDate(h.date),safe(employeeName(h.employeeId)),safe(job(h.jobId)?.title||"Unknown job"),num(h.hours).toFixed(2)]))));
+}
+function showEstimates(){
+ const e=edit?.kind==="estimate"?db.estimates.find(x=>String(x.id)===String(edit.id)):null;
+ const form='<div class="formgrid">'+selectField("Customer","customerId",opts(db.customers,e?.customerId))+field("Description","description",e?.description||"","text",true)+
+ '<label>Estimate amount ($)<input name="amount" type="number" required min="0" max="1000000000" step=".01" value="'+safe(e?.amount??0)+'"></label>'+
+ selectField("Status","status",["Draft","Sent","Accepted","Declined"].map(x=>'<option value="'+x+'" '+(x===(e?.status||"Draft")?"selected":"")+'>'+x+'</option>').join(""))+'</div>';
+ const rows=db.estimates.slice().reverse().map(e=>{
+  const already=db.invoices.some(i=>i.estimateId===e.id);
+  return row([safe(e.id),safe(customerName(e.customerId)),safe(e.description),usd(e.amount),pill(e.status),'<button class="secondary small" data-edit="estimate" data-id="'+safe(e.id)+'">Edit</button> '+(already?'<span class="muted">Invoiced</span>':'<button class="primary small" data-convert="'+safe(e.id)+'">Create invoice</button>')]);
+ });
+ return panel(e?"Edit estimate":"New estimate",db.customers.length?formWrap("estimate",form,e?"Save estimate":"Create estimate"):'<p>Add a customer first.</p>')+panel("Estimates",table(["Estimate","Customer","Description","Amount","Status","Actions"],rows));
+}
+function showInvoices(){
+ const inv=edit?.kind==="invoice"?invoice(edit.id):null;
+ const form='<div class="formgrid">'+selectField("Customer","customerId",opts(db.customers,inv?.customerId))+field("Description","description",inv?.description||"","text",true)+
+ '<label>Amount ($)<input name="amount" type="number" required min="0" max="1000000000" step=".01" value="'+safe(inv?.amount??0)+'"></label>'+
+ field("Due date","due",inv?.due||date(14),"date",true)+'</div>';
+ const rows=db.invoices.slice().reverse().map(i=>row([safe(i.id),safe(customerName(i.customerId)),safe(i.description),usd(i.amount),usd(paid(i.id)),usd(balance(i)),pill(invoiceStatus(i)), '<button class="secondary small" data-edit="invoice" data-id="'+safe(i.id)+'">Edit</button>']));
+ return panel(inv?"Edit invoice":"Create invoice",db.customers.length?formWrap("invoice",form,inv?"Save invoice":"Create invoice"):'<p>Add a customer first.</p>')+
+ panel("Invoices",table(["Invoice","Customer","Description","Amount","Paid","Balance","Status","Action"],rows))+
+ '<p class="note">Invoices and payments shown here are bookkeeping previews; no payment is charged or transmitted.</p>';
+}
+function showPayments(){
+ const open=db.invoices.filter(i=>balance(i)>0.005);
+ const invoiceOptions=open.map(i=>({id:i.id,name:i.id+" · "+customerName(i.customerId)+" · "+usd(balance(i))}));
+ const form='<div class="formgrid">'+selectField("Invoice","invoiceId",opts(invoiceOptions))+
+ '<label>Amount paid ($)<input name="amount" type="number" required min=".01" step=".01" max="1000000000" placeholder="0.00"></label>'+
+ field("Payment date","date",date(0),"date",true)+selectField("Payment method","method",["Cash","Check","Bank Transfer","Card","Other"].map(s=>'<option>'+s+'</option>').join(""))+'</div>';
+ const rows=db.payments.slice().reverse().map(p=>row([fmtDate(p.date),safe(p.invoiceId),safe(customerName(invoice(p.invoiceId)?.customerId)),usd(p.amount),safe(p.method)]));
+ return panel("Record a payment",open.length?formWrap("payment",form,"Record payment"):'<p>All demo invoices are fully paid. Create an invoice to add a new payment.</p>')+panel("Payment history",table(["Date","Invoice","Customer","Amount","Method"],rows));
+}
+function showReports(){
+ const revenue=db.payments.reduce((s,p)=>s+num(p.amount),0);
+ const outstanding=db.invoices.reduce((s,i)=>s+balance(i),0);
+ const pipeline=db.estimates.filter(e=>!["Declined"].includes(e.status)).reduce((s,e)=>s+num(e.amount),0);
+ const byStatus=STATUSES.map(s=>[s,db.jobs.filter(j=>j.status===s).length]);
+ return '<div class="grid">'+metric("Recorded payments",usd(revenue))+metric("Outstanding",usd(outstanding))+metric("Estimate pipeline",usd(pipeline))+metric("Tracked hours",db.hours.reduce((s,h)=>s+num(h.hours),0).toFixed(2))+'</div>'+
+ panel("Job status report",table(["Job status","Count"],byStatus.map(x=>row([safe(x[0]),String(x[1])]))))+
+ panel("Export preview reports",'<p>Download a CSV of fictional records for review.</p><div class="flex"><button class="secondary" data-export="customers">Customers CSV</button><button class="secondary" data-export="jobs">Jobs CSV</button><button class="secondary" data-export="invoices">Invoices CSV</button></div>');
+}
+function showManagement(){
+ if(subTab==="Company Settings"){
+  const c=db.company;
+  return panel("Company profile",formWrap("company",'<div class="formgrid">'+field("Company name","name",c.name,"text",true)+field("Industry","industry",c.industry)+field("Contact email","email",c.email,"email")+field("Phone","phone",c.phone)+'</div>',"Save company settings"))+
+  '<p class="note">Company preferences here are saved in this browser only, not to your Windows CRM.</p>';
+ }
+ if(subTab==="Backups")return panel("Backup and restore the demo",'<p>Export a JSON snapshot of fictional browser records, or import a previous demo snapshot. Importing replaces the records in this browser.</p>'+
+ '<div class="flex"><button class="primary" data-action="export-backup">Export demo backup</button><label style="flex:1;min-width:220px">Import a demo backup<input type="file" id="import-file" accept=".json,application/json"></label></div>'+
+ '<p class="note">The real Windows CRM database must be backed up privately and separately. GitHub stores source-code versions, not your live customer data.</p>'+
+ '<button class="secondary" data-action="reset-demo">Reset fictional records</button>');
+ if(subTab==="Cloud Sync")return panel("Cloud synchronization",'<p><b>Not enabled yet.</b> These browser records are stored locally. The desktop 2.3 application has a local change journal, but the desktop and website do not synchronize.</p><p>Production synchronization will require an authenticated server, tenant-isolated database, conflict handling, and offline reconciliation tests.</p>');
+ if(subTab==="Security")return panel("Security and accounts",'<p><b>Demo only:</b> This public preview has no user login or permission enforcement. Do not enter real customer, employee, password, or payment information.</p><p>Production release requires secure login, tenant isolation, authorization tests, backups, HTTPS, MFA support, and an audit trail.</p>');
+ return panel("Licensing and updates",'<p>The demo does not enforce a paid license. Future commercial licensing requires server-verified entitlements, signed license records, billing and renewal handling, and an offline activation policy.</p><p>Deployment updates are versioned in GitHub and published through Cloudflare Pages.</p>');
+}
 function render(){
- $('nav').innerHTML=Object.keys(sections).map(s=>'<button class="nav'+(s===section?' active':'')+'" data-main="'+s+'" aria-current="'+(s===section?'page':'false')+'">'+safe(s)+'</button>').join('');
- $('heading').textContent=section;$('intro').textContent=intro[section];
- $('tabs').innerHTML=sections[section].map(s=>'<button class="tab'+(sub===s?' active':'')+'" data-sub="'+safe(s)+'">'+safe(s)+'</button>').join('');
+ $('nav').innerHTML=Object.keys(TABS).map(t=>'<button class="nav'+(mainTab===t?" active":"")+'" data-main="'+t+'" aria-current="'+(mainTab===t?"page":"false")+'">'+t+'</button>').join("");
+ $('heading').textContent=mainTab;$('intro').textContent=DESCRIPTIONS[mainTab];
+ $('tabs').innerHTML=TABS[mainTab].map(t=>'<button class="tab'+(subTab===t?" active":"")+'" data-sub="'+t+'">'+t+'</button>').join("");
  let html="";
- if(section==="Dashboard"){
-   if(sub==="Recent Activity"){html='<div class="panel"><h2>Recent Activity</h2>'+db.activity.map(a=>'<p>• '+safe(a)+'</p>').join('')+'</div>'}
-   else{
-     const paid=db.invoices.filter(i=>i.status==="Paid").reduce((sum,i)=>sum+i.amount,0);
-     const unpaid=db.invoices.filter(i=>i.status!=="Paid").reduce((sum,i)=>sum+i.amount,0);
-     html='<div class="grid">'+metric("Customers",db.customers.length)+metric("Open jobs",db.jobs.filter(j=>!["Completed","Cancelled"].includes(j.status)).length)+metric("Paid invoice total",cash(paid))+metric("Unpaid invoices",cash(unpaid))+'</div>';
-     html+='<div class="panel"><h2>Recent jobs</h2>'+table(["Job","Customer","Status","Est. amount"],db.jobs.slice().reverse().slice(0,6).map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(userCustomer(j.customerId))+'</td><td><span class="status">'+safe(j.status)+'</span></td><td>'+cash(j.amount)+'</td></tr>'))+'</div>';
-     html+='<p class="note">Dashboard finance totals are based on sample invoice statuses, not bank deposits.</p>';
-   }
- }
- if(section==="Customers"){
-   const filtered=db.customers.filter(c=>(c.name+' '+c.email+' '+c.phone).toLowerCase().includes(search.toLowerCase()));
-   if(sub==="Customer History"){html='<div class="panel"><h2>Customer job history</h2>'+table(["Customer","Job","Status"],db.jobs.map(j=>'<tr><td>'+safe(userCustomer(j.customerId))+'</td><td>'+safe(j.title)+'</td><td>'+safe(j.status)+'</td></tr>'))+'</div>'}
-   else{
-    html='<div class="panel"><h2>Add customer</h2><form id="customer-form"><div class="formgrid"><label>Customer name<input required maxlength="200" name="name" placeholder="Customer name"></label><label>Email<input type="email" maxlength="200" name="email" placeholder="Email"></label><label>Phone<input maxlength="80" name="phone" placeholder="Phone"></label><label>Notes<input maxlength="500" name="notes" placeholder="Notes"></label></div><p><button class="primary">Add customer</button></p></form></div>';
-    if(editing!==null){let c=findCustomer(editing);if(c)html+='<div class="panel"><h2>Edit customer · '+safe(c.name)+'</h2><form id="edit-form"><input name="id" type="hidden" value="'+c.id+'"><div class="formgrid"><label>Name<input required maxlength="200" name="name" value="'+safe(c.name)+'"></label><label>Email<input type="email" maxlength="200" name="email" value="'+safe(c.email)+'"></label><label>Phone<input maxlength="80" name="phone" value="'+safe(c.phone)+'"></label><label>Notes<input maxlength="500" name="notes" value="'+safe(c.notes)+'"></label></div><p><button class="primary">Save customer</button> <button type="button" class="secondary" data-action="cancel-edit">Cancel</button></p></form></div>'}
-    html+='<div class="panel"><h2>Customer directory</h2><form id="search-form" class="flex"><label style="flex:1;min-width:200px">Search by name, email or phone<input name="search" value="'+safe(search)+'" placeholder="Search customers"></label><button class="secondary" type="submit">Search</button><button class="secondary" data-action="clear-search" type="button">Clear</button></form><p class="muted">'+filtered.length+' customer(s) found</p>'+table(["Customer","Email","Phone","Action"],filtered.map(c=>'<tr><td>'+safe(c.name)+'</td><td>'+safe(c.email)+'</td><td>'+safe(c.phone)+'</td><td><button class="secondary small" data-edit="'+c.id+'">View / edit</button></td></tr>'))+'</div>';
-   }
- }
- if(section==="Operations"){
-  if(sub==="Jobs"){
-   let filtered=db.jobs.filter(j=>!statusFilter||j.status===statusFilter);
-   html='<div class="panel"><h2>Create job</h2><form id="job-form"><div class="formgrid"><label>Customer<select name="customerId" required>'+db.customers.map(c=>'<option value="'+c.id+'">'+safe(c.name)+'</option>').join('')+'</select></label><label>Job title<input name="title" maxlength="200" required placeholder="Job description"></label><label>Estimated amount ($)<input type="number" name="amount" step="0.01" min="0" max="10000000000" required value="0"></label></div><p><button class="primary"'+(!db.customers.length?' disabled':'')+'>Create job</button></p></form></div>';
-   html+='<div class="panel"><h2>Jobs and status</h2><form id="filter-form" class="flex"><label>Filter jobs<select name="status"><option value="">All statuses</option>'+statuses.map(s=>'<option '+(s===statusFilter?'selected ':'')+'value="'+s+'">'+s+'</option>').join('')+'</select></label><button class="secondary" type="submit">Apply filter</button><button class="secondary" type="button" data-action="clear-filter">Clear</button></form><p class="muted">'+filtered.length+' job(s) shown</p>'+table(["Job","Customer","Amount","Update status"],filtered.map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(userCustomer(j.customerId))+'</td><td>'+cash(j.amount)+'</td><td><form class="inlineform" data-status-form="'+j.id+'"><select name="status" aria-label="Status for '+safe(j.title)+'">'+statuses.map(s=>'<option value="'+s+'" '+(j.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select><button class="primary small">Save</button></form></td></tr>'))+'</div>';
-  }else if(sub==="Schedule"){html='<div class="panel"><h2>Scheduling</h2><p>Upcoming demo jobs and their statuses</p>'+table(["Job","Customer","Status"],db.jobs.map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(userCustomer(j.customerId))+'</td><td>'+safe(j.status)+'</td></tr>'))+'<p class="note">The Windows CRM includes appointment scheduling. This preview does not edit appointments.</p></div>'}
-  else html='<div class="panel"><h2>Employees</h2><p>The Windows CRM includes employee records. This design demo does not connect to employee data.</p></div>';
- }
- if(section==="Finance"){
-  if(sub==="Invoices"){html='<div class="panel"><h2>Sample invoices</h2>'+table(["Invoice","Customer","Amount","Status"],db.invoices.map(i=>'<tr><td>'+safe(i.id)+'</td><td>'+safe(i.customer)+'</td><td>'+cash(i.amount)+'</td><td><span class="status">'+safe(i.status)+'</span></td></tr>'))+'</div>'}
-  else if(sub==="Reports"){html='<div class="grid">'+metric("Paid",cash(db.invoices.filter(i=>i.status==="Paid").reduce((a,b)=>a+b.amount,0)))+metric("Outstanding",cash(db.invoices.filter(i=>i.status!=="Paid").reduce((a,b)=>a+b.amount,0)))+metric("Jobs",db.jobs.length)+metric("Customers",db.customers.length)+'</div>'}
-  else html='<div class="panel"><h2>'+safe(sub)+'</h2><p>Financial '+safe(sub.toLowerCase())+' are supported in the Windows CRM. This section shows a design preview only.</p></div>';
- }
- if(section==="Management"){
-  const copy={"Company Settings":"Company branding, address and organization settings.","Security":"User accounts, roles and permissions. No live authentication is enabled in this demo.","Backups":"Use the versioned CRM ZIP in GitHub to restore source code. Back up the actual Windows database separately and privately.","Cloud Sync":"Local change journaling exists in the Windows CRM. Online synchronization is not yet active.","Licensing":"Commercial licensing and updates are planned for later releases."};
-  html='<div class="panel"><h2>'+safe(sub)+'</h2><p>'+safe(copy[sub])+'</p><p class="note">This website is separate from your actual Windows 11 CRM and never accesses its customers, jobs or administrator accounts.</p>';
-  if(sub==="Backups")html+='<p><a href="https://github.com/davidrankin2468-a11y/nexus-crm/tree/main/backups" target="_blank" rel="noreferrer">Open versioned GitHub source backups</a></p>';
-  if(sub==="Company Settings")html+='<p><button class="secondary" data-action="reset">Reset fictional demo records</button></p>';
-  html+='</div>';
- }
+ if(mainTab==="Dashboard")html=showDashboard();
+ if(mainTab==="Customers")html=showCustomers();
+ if(mainTab==="Operations")html=subTab==="Jobs"?showJobs():subTab==="Schedule"?showSchedule():subTab==="Employees"?showEmployees():showHours();
+ if(mainTab==="Finance")html=subTab==="Estimates"?showEstimates():subTab==="Invoices"?showInvoices():subTab==="Payments"?showPayments():showReports();
+ if(mainTab==="Management")html=showManagement();
  $('stage').innerHTML=html;
 }
-document.addEventListener("click",e=>{
- const main=e.target.closest("[data-main]"),tab=e.target.closest("[data-sub]"),edit=e.target.closest("[data-edit]"),action=e.target.closest("[data-action]");
- if(main){section=main.dataset.main;sub=sections[section][0];editing=null;render();return}
- if(tab){sub=tab.dataset.sub;editing=null;render();return}
- if(edit){editing=Number(edit.dataset.edit);render();document.getElementById("edit-form")?.scrollIntoView({behavior:"smooth",block:"center"});return}
- if(action){const a=action.dataset.action;if(a==="cancel-edit")editing=null;if(a==="clear-search")search="";if(a==="clear-filter")statusFilter="";if(a==="reset"&&confirm("Restore fictional demo data in this browser?")){db=starter();persist();search="";statusFilter="";editing=null}render()}
-});
-document.addEventListener("submit",e=>{
- const f=e.target,kind=f.id,sd=f.dataset.statusForm;
- if(!["customer-form","edit-form","job-form","search-form","filter-form"].includes(kind)&&!sd)return;
- e.preventDefault();const d=new FormData(f);
- if(kind==="search-form"){search=String(d.get("search")||"").trim();render();return}
- if(kind==="filter-form"){statusFilter=String(d.get("status")||"");render();return}
- if(kind==="customer-form"||kind==="edit-form"){
-  const name=String(d.get("name")||"").trim().slice(0,200);
-  if(!name){alert("Enter a customer name");return}
-  const record={name,email:String(d.get("email")||"").trim().slice(0,200),phone:String(d.get("phone")||"").trim().slice(0,80),notes:String(d.get("notes")||"").trim().slice(0,500)};
-  if(kind==="customer-form"){record.id=Math.max(0,...db.customers.map(c=>c.id))+1;db.customers.push(record);activity("Customer added: "+name)}else{const id=Number(d.get("id"));const c=findCustomer(id);if(!c)return;Object.assign(c,record);activity("Customer updated: "+name);editing=null}
+function activate(t){mainTab=t;subTab=TABS[t][0];edit=null;render()}
+function complete(msg){logActivity(msg);persist();edit=null;render()}
+function csvExport(kind){
+ const src={customers:db.customers,jobs:db.jobs,invoices:db.invoices}[kind];if(!src)return;
+ const headers={customers:["id","name","email","phone","notes","status"],jobs:["id","title","customerId","employeeId","scheduled","status","amount","notes"],invoices:["id","customerId","description","created","due","amount"]}[kind];
+ const enc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+ const text=[headers.join(",")].concat(src.map(v=>headers.map(k=>enc(v[k])).join(","))).join("\r\n");
+ download("nexus-crm-demo-"+kind+"-"+date(0)+".csv",text,"text/csv;charset=utf-8");
+}
+function download(name,content,mime){
+ const url=URL.createObjectURL(new Blob([content],{type:mime}));const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+document.addEventListener("click",event=>{
+ const b=event.target.closest("button");if(!b)return;
+ if(b.dataset.main){activate(b.dataset.main);return}
+ if(b.dataset.sub){subTab=b.dataset.sub;edit=null;render();return}
+ if(b.dataset.edit){edit={kind:b.dataset.edit,id:b.dataset.id};render();document.querySelector("[data-form='"+b.dataset.edit+"']")?.scrollIntoView({behavior:"smooth",block:"center"});return}
+ if(b.dataset.export){csvExport(b.dataset.export);return}
+ if(b.dataset.convert){
+  const e=db.estimates.find(x=>String(x.id)===String(b.dataset.convert));
+  if(!e||db.invoices.some(x=>String(x.estimateId)===String(e.id)))return;
+  const inv={id:id("INV"),customerId:e.customerId,description:e.description,amount:num(e.amount),due:date(14),created:date(0),estimateId:e.id};
+  db.invoices.push(inv);complete("Invoice created from estimate "+e.id);mainTab="Finance";subTab="Invoices";render();return;
  }
- if(kind==="job-form"){
-  const cid=Number(d.get("customerId")),title=String(d.get("title")||"").trim().slice(0,200),amount=Number(d.get("amount")||0);
-  if(!findCustomer(cid)||!title||!Number.isFinite(amount)||amount<0||amount>1e10){alert("Enter a valid customer, job and amount");return}
-  db.jobs.push({id:Math.max(0,...db.jobs.map(j=>j.id))+1,customerId:cid,title,status:"Planned",amount:Math.round(amount*100)/100});activity("Job created: "+title)
- }
- if(sd){const j=db.jobs.find(x=>x.id===Number(sd)),status=String(d.get("status")||"");if(!j||!statuses.includes(status))return;j.status=status;activity("Job status changed: "+j.title+" → "+status)}
- persist();render();
+ const a=b.dataset.action;
+ if(a==="cancel"){edit=null;render()}
+ if(a==="clear-customer-search"){customerSearch="";render()}
+ if(a==="clear-job-filter"){jobFilter="";render()}
+ if(a==="export-backup"){download("nexus-crm-2.4-demo-backup-"+date(0)+".json",JSON.stringify(db,null,2),"application/json")}
+ if(a==="reset-demo"&&confirm("Reset all fictional demo data saved in this browser? This does not affect GitHub or your Windows CRM.")){db=seed();customerSearch="";jobFilter="";edit=null;complete("Preview records reset")}
 });
-render();
+document.addEventListener("change",async event=>{
+ const input=event.target;if(input.id!=="import-file"||!input.files?.length)return;
+ const file=input.files[0];if(file.size>1500000){alert("Demo backup exceeds the 1.5 MB import limit.");return}
+ try{const text=await file.text(),next=cleanImported(JSON.parse(text));
+  if(!confirm("Replace all fictional browser records with this backup?"))return;
+  db=next;complete("Demo backup imported");
+ }catch(e){alert("Import failed: "+e.message)}
+});
+document.addEventListener("submit",event=>{
+ const f=event.target;if(!f.dataset.form)return;event.preventDefault();
+ const d=new FormData(f),kind=f.dataset.form;
+ try{
+  if(kind==="customer-search"){customerSearch=formValue(d,"search");render();return}
+  if(kind==="job-filter"){jobFilter=formValue(d,"status");render();return}
+  if(kind==="customer"){
+   const rec={name:required(d,"name",200),email:formValue(d,"email",200),phone:formValue(d,"phone",80),notes:formValue(d,"notes",500),status:"Active"};
+   if(edit?.kind==="customer"){Object.assign(customer(edit.id),rec);complete("Customer updated: "+rec.name)}
+   else{db.customers.push({id:id("c"),...rec});complete("Customer added: "+rec.name)}return;
+  }
+  if(kind==="employee"){
+   const rec={name:required(d,"name",200),role:formValue(d,"role",200),email:formValue(d,"email",200),status:formValue(d,"status",20)};
+   if(edit?.kind==="employee"){Object.assign(employee(edit.id),rec);complete("Employee updated: "+rec.name)}
+   else{db.employees.push({id:id("e"),...rec});complete("Employee added: "+rec.name)}return;
+  }
+  if(kind==="job"){
+   const customerId=required(d,"customerId"),title=required(d,"title",200),status=formValue(d,"status"),employeeId=formValue(d,"employeeId");
+   if(!customer(customerId)||!STATUSES.includes(status)||employeeId&&!employee(employeeId))throw Error("Please select a valid customer, employee and job status.");
+   const rec={customerId,title,status,amount:amount(d,"amount"),scheduled:formValue(d,"scheduled",20),employeeId,notes:formValue(d,"notes",500)};
+   if(edit?.kind==="job"){Object.assign(job(edit.id),rec);complete("Job updated: "+title)}
+   else{db.jobs.push({id:id("j"),...rec});complete("Job created: "+title)}return;
+  }
+  if(kind==="hours"){
+   const employeeId=required(d,"employeeId"),jobId=required(d,"jobId"),h=num(d.get("hours"));
+   if(!employee(employeeId)||!job(jobId)||h<.25||h>24)throw Error("Choose a valid employee, job and hours (0.25–24).");
+   db.hours.push({id:id("h"),employeeId,jobId,date:required(d,"date",20),hours:h});
+   complete("Recorded "+h+" hours");return;
+  }
+  if(kind==="estimate"){
+   const customerId=required(d,"customerId"),description=required(d,"description",200),status=formValue(d,"status");
+   if(!customer(customerId)||!["Draft","Sent","Accepted","Declined"].includes(status))throw Error("Invalid estimate details.");
+   const rec={customerId,description,amount:amount(d,"amount"),status};
+   if(edit?.kind==="estimate"){Object.assign(db.estimates.find(x=>String(x.id)===String(edit.id)),rec);complete("Estimate updated: "+description)}
+   else{db.estimates.push({id:id("EST"),created:date(0),...rec});complete("Estimate created: "+description)}return;
+  }
+  if(kind==="invoice"){
+   const customerId=required(d,"customerId"),description=required(d,"description",200),due=required(d,"due",20),amt=amount(d,"amount");
+   if(!customer(customerId))throw Error("Select a customer.");
+   const rec={customerId,description,due,amount:amt};
+   if(edit?.kind==="invoice"){
+    const old=invoice(edit.id);if(amt+0.005<paid(old.id))throw Error("Invoice amount cannot be lower than recorded payments.");
+    Object.assign(old,rec);complete("Invoice updated: "+old.id);
+   }else{const inv={id:id("INV"),created:date(0),...rec};db.invoices.push(inv);complete("Invoice created: "+inv.id)}
+   return;
+  }
+  if(kind==="payment"){
+   const inv=invoice(required(d,"invoiceId")),value=amount(d,"amount");
+   if(!inv||value<=0||value>balance(inv)+0.005)throw Error("Payment must be greater than zero and no more than the remaining invoice balance.");
+   db.payments.push({id:id("p"),invoiceId:inv.id,amount:value,date:required(d,"date",20),method:formValue(d,"method",40)});
+   complete("Payment recorded: "+usd(value));return;
+  }
+  if(kind==="company"){
+   db.company={name:required(d,"name",200),industry:formValue(d,"industry",100),email:formValue(d,"email",200),phone:formValue(d,"phone",80)};
+   complete("Demo company settings updated");return;
+  }
+ }catch(e){alert(e.message||"Unable to save record")}
+});
+persist();render();
+
 </script>
 </body>
 </html>
