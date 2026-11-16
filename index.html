@@ -64,6 +64,7 @@ const usd=x=>Number(x||0).toLocaleString("en-US",{style:"currency",currency:"USD
 const num=x=>Number.isFinite(Number(x))?Number(x):0;
 const date=offset=>{const d=new Date();d.setDate(d.getDate()+offset);return d.toISOString().slice(0,10)};
 const id=prefix=>prefix+"_"+((typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"_"+Math.random().toString(36).slice(2));
+function nextDocId(prefix,list,start){const nums=list.map(v=>{const m=String(v.id).match(new RegExp("^"+prefix+"-(\\d+)$"));return m?Number(m[1]):0});return prefix+"-"+(Math.max(start-1,...nums)+1)}
 const seed=()=>({
  schema:24,
  company:{name:"Nexus Demo Company",industry:"Field Services",email:"contact@example.com",phone:"555-0100"},
@@ -166,7 +167,8 @@ function showCustomers(){
   return panel("Customer job history",table(["Customer","Job","Status","Amount"],db.jobs.map(j=>row([safe(customerName(j.customerId)),safe(j.title),pill(j.status),usd(j.amount)]))));
  }
  const c=edit?.kind==="customer"?customer(edit.id):null;
- const entry='<div class="formgrid">'+field("Customer / company name","name",c?.name||"","text",true)+field("Email","email",c?.email||"","email")+field("Phone","phone",c?.phone||"")+field("Notes","notes",c?.notes||"")+'</div>';
+ const entry='<div class="formgrid">'+field("Customer / company name","name",c?.name||"","text",true)+field("Email","email",c?.email||"","email")+field("Phone","phone",c?.phone||"")+field("Notes","notes",c?.notes||"")+
+ selectField("Status","status",["Active","Inactive"].map(x=>'<option value="'+x+'" '+(x===(c?.status||"Active")?"selected":"")+'>'+x+'</option>').join(""))+'</div>';
  const filtered=db.customers.filter(c=>(c.name+" "+c.email+" "+c.phone).toLowerCase().includes(customerSearch.toLowerCase()));
  const searchForm='<form data-form="customer-search" class="flex"><label style="flex:1;min-width:190px">Search customers<input name="search" value="'+safe(customerSearch)+'" placeholder="Name, email or phone"></label><button class="secondary" type="submit">Search</button><button class="secondary" type="button" data-action="clear-customer-search">Clear</button></form>';
  const rows=filtered.map(c=>row([safe(c.name),safe(c.email),safe(c.phone),safe(c.status||"Active"),'<button class="secondary small" data-edit="customer" data-id="'+safe(c.id)+'">Edit</button>']));
@@ -290,7 +292,7 @@ document.addEventListener("click",event=>{
  if(b.dataset.convert){
   const e=db.estimates.find(x=>String(x.id)===String(b.dataset.convert));
   if(!e||db.invoices.some(x=>String(x.estimateId)===String(e.id)))return;
-  const inv={id:id("INV"),customerId:e.customerId,description:e.description,amount:num(e.amount),due:date(14),created:date(0),estimateId:e.id};
+  const inv={id:nextDocId("INV",db.invoices,1042),customerId:e.customerId,description:e.description,amount:num(e.amount),due:date(14),created:date(0),estimateId:e.id};
   db.invoices.push(inv);complete("Invoice created from estimate "+e.id);mainTab="Finance";subTab="Invoices";render();return;
  }
  const a=b.dataset.action;
@@ -315,7 +317,7 @@ document.addEventListener("submit",event=>{
   if(kind==="customer-search"){customerSearch=formValue(d,"search");render();return}
   if(kind==="job-filter"){jobFilter=formValue(d,"status");render();return}
   if(kind==="customer"){
-   const rec={name:required(d,"name",200),email:formValue(d,"email",200),phone:formValue(d,"phone",80),notes:formValue(d,"notes",500),status:"Active"};
+   const rec={name:required(d,"name",200),email:formValue(d,"email",200),phone:formValue(d,"phone",80),notes:formValue(d,"notes",500),status:formValue(d,"status",20)==="Inactive"?"Inactive":"Active"};
    if(edit?.kind==="customer"){Object.assign(customer(edit.id),rec);complete("Customer updated: "+rec.name)}
    else{db.customers.push({id:id("c"),...rec});complete("Customer added: "+rec.name)}return;
   }
@@ -342,7 +344,7 @@ document.addEventListener("submit",event=>{
    if(!customer(customerId)||!["Draft","Sent","Accepted","Declined"].includes(status))throw Error("Invalid estimate details.");
    const rec={customerId,description,amount:amount(d,"amount"),status};
    if(edit?.kind==="estimate"){Object.assign(db.estimates.find(x=>String(x.id)===String(edit.id)),rec);complete("Estimate updated: "+description)}
-   else{db.estimates.push({id:id("EST"),created:date(0),...rec});complete("Estimate created: "+description)}return;
+   else{db.estimates.push({id:nextDocId("EST",db.estimates,1001),created:date(0),...rec});complete("Estimate created: "+description)}return;
   }
   if(kind==="invoice"){
    const customerId=required(d,"customerId"),description=required(d,"description",200),due=required(d,"due",20),amt=amount(d,"amount");
@@ -351,7 +353,7 @@ document.addEventListener("submit",event=>{
    if(edit?.kind==="invoice"){
     const old=invoice(edit.id);if(amt+0.005<paid(old.id))throw Error("Invoice amount cannot be lower than recorded payments.");
     Object.assign(old,rec);complete("Invoice updated: "+old.id);
-   }else{const inv={id:id("INV"),created:date(0),...rec};db.invoices.push(inv);complete("Invoice created: "+inv.id)}
+   }else{const inv={id:nextDocId("INV",db.invoices,1042),created:date(0),...rec};db.invoices.push(inv);complete("Invoice created: "+inv.id)}
    return;
   }
   if(kind==="payment"){
