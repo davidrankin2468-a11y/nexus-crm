@@ -1,12 +1,13 @@
 # Nexus CRM 2.3 — Customers and Operations
 
-Backup of the **source-only Windows application**, based on Nexus CRM 2.2 Five-Tab UI.
+**Backup status: uploaded and verified.** Source-only Windows application derived from Nexus CRM 2.2 Five-Tab UI.
 
-- Archive: [Nexus_CRM_2_3_Customers_Operations.zip](./Nexus_CRM_2_3_Customers_Operations.zip)
-- SHA-256: `2414fb83a3bd46aedd315cf738a7394ae160ed672e699bf78f2147e0576a5a6a`
-- Archive size: 31,468 bytes
-- Smoke tests: customer creation, search/edit, job creation/status, company isolation and sync-journal triggers passed using a Flask stub; a complete Flask/Windows launch test still needs to be done on Windows.
-- No SQLite database, passwords, or secret-key files are included.
-- The public Vercel preview is a separate interactive demo using fictional data.
+- [Download version 2.3 ZIP](./Nexus_CRM_2_3_Customers_Operations.zip)
+- SHA-256: `234d240deda220e6fd0efb0f2e69149287a860c16f339b0a4fd2ab7637b46cb5`
+- Size: 31,503 bytes
+- Features: five main tabs; customer create/search/edit; create jobs/update status; dashboard company metrics; pre-upgrade 2.3 SQLite backup.
+- Tests: Python compilation, customer CRUD, job status workflow, basic tenant isolation, and local sync journal smoke tests (Flask shim, not a complete Windows execution test).
+- Contains no local SQLite database, live customer records, password hashes or session keys.
+- Vercel is a separate fictional-data demo; it is not connected to your Windows CRM database.
 
-**WARNING:** The `nexus-crm` GitHub repository is public. Anyone can download the source archive. Consider a separate private repository for confidential product code.
+**Warning:** This GitHub repository is public. The source archive is visible to anyone. Use a private repository for confidential software or actual customer backups.
