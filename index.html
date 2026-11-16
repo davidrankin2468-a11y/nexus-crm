@@ -226,7 +226,7 @@ function showEstimates(){
  selectField("Status","status",["Draft","Sent","Accepted","Declined"].map(x=>'<option value="'+x+'" '+(x===(e?.status||"Draft")?"selected":"")+'>'+x+'</option>').join(""))+'</div>';
  const rows=db.estimates.slice().reverse().map(e=>{
   const already=db.invoices.some(i=>i.estimateId===e.id);
-  return row([safe(e.id),safe(customerName(e.customerId)),safe(e.description),usd(e.amount),pill(e.status),'<button class="secondary small" data-edit="estimate" data-id="'+safe(e.id)+'">Edit</button> '+(already?'<span class="muted">Invoiced</span>':'<button class="primary small" data-convert="'+safe(e.id)+'">Create invoice</button>')]);
+  return row([safe(e.id),safe(customerName(e.customerId)),safe(e.description),usd(e.amount),pill(e.status),'<button class="secondary small" data-edit="estimate" data-id="'+safe(e.id)+'">Edit</button> <button class="secondary small" data-print="estimate" data-id="'+safe(e.id)+'">Print</button> '+(already?'<span class="muted">Invoiced</span>':'<button class="primary small" data-convert="'+safe(e.id)+'">Create invoice</button>')]);
  });
  return panel(e?"Edit estimate":"New estimate",db.customers.length?formWrap("estimate",form,e?"Save estimate":"Create estimate"):'<p>Add a customer first.</p>')+panel("Estimates",table(["Estimate","Customer","Description","Amount","Status","Actions"],rows));
 }
@@ -235,7 +235,7 @@ function showInvoices(){
  const form='<div class="formgrid">'+selectField("Customer","customerId",opts(db.customers,inv?.customerId))+field("Description","description",inv?.description||"","text",true)+
  '<label>Amount ($)<input name="amount" type="number" required min="0" max="1000000000" step=".01" value="'+safe(inv?.amount??0)+'"></label>'+
  field("Due date","due",inv?.due||date(14),"date",true)+'</div>';
- const rows=db.invoices.slice().reverse().map(i=>row([safe(i.id),safe(customerName(i.customerId)),safe(i.description),usd(i.amount),usd(paid(i.id)),usd(balance(i)),pill(invoiceStatus(i)), '<button class="secondary small" data-edit="invoice" data-id="'+safe(i.id)+'">Edit</button>']));
+ const rows=db.invoices.slice().reverse().map(i=>row([safe(i.id),safe(customerName(i.customerId)),safe(i.description),usd(i.amount),usd(paid(i.id)),usd(balance(i)),pill(invoiceStatus(i)), '<button class="secondary small" data-edit="invoice" data-id="'+safe(i.id)+'">Edit</button> <button class="secondary small" data-print="invoice" data-id="'+safe(i.id)+'">Print</button>']));
  return panel(inv?"Edit invoice":"Create invoice",db.customers.length?formWrap("invoice",form,inv?"Save invoice":"Create invoice"):'<p>Add a customer first.</p>')+
  panel("Invoices",table(["Invoice","Customer","Description","Amount","Paid","Balance","Status","Action"],rows))+
  '<p class="note">Invoices and payments shown here are bookkeeping previews; no payment is charged or transmitted.</p>';
@@ -286,6 +286,24 @@ function render(){
 }
 function activate(t){mainTab=t;subTab=TABS[t][0];edit=null;render()}
 function complete(msg){logActivity(msg);persist();edit=null;render()}
+function printDoc(kind,docId){
+ const x=kind==="invoice"?invoice(docId):db.estimates.find(e=>String(e.id)===String(docId));
+ if(!x)return;
+ const status=kind==="invoice"?invoiceStatus(x):x.status;
+ const title=kind==="invoice"?"Invoice":"Estimate";
+ const content='<!doctype html><html><head><meta charset="utf-8"><title>'+safe(x.id)+'</title><style>body{font:16px Arial,sans-serif;color:#15253a;max-width:800px;margin:50px auto;padding:25px}header{border-bottom:3px solid #7baa58;padding-bottom:14px;margin-bottom:30px}h1{margin:12px 0}table{width:100%;border-collapse:collapse;margin-top:20px}td{padding:12px;border-bottom:1px solid #ddd}strong{font-size:22px}</style></head><body>'+
+ '<header><b>'+safe(db.company.name)+'</b><h1>'+title+' '+safe(x.id)+'</h1></header>'+
+ '<p>Customer: <b>'+safe(customerName(x.customerId))+'</b></p>'+
+ '<p>Description: '+safe(x.description)+'</p>'+
+ (kind==="invoice"?'<p>Due: '+safe(x.due)+'</p>':'')+
+ '<p>Status: '+safe(status)+'</p>'+
+ '<table><tr><td>Amount</td><td><strong>'+usd(x.amount)+'</strong></td></tr>'+
+ (kind==="invoice"?'<tr><td>Paid</td><td>'+usd(paid(x.id))+'</td></tr><tr><td>Balance due</td><td>'+usd(balance(x))+'</td></tr>':'')+
+ '</table><p>Preview only — not a legally issued invoice or tax document.</p></body></html>';
+ const w=window.open("","_blank");
+ if(!w){alert("Allow pop-ups to print the document.");return}
+ w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
+}
 function csvExport(kind){
  const src={customers:db.customers,jobs:db.jobs,invoices:db.invoices}[kind];if(!src)return;
  const headers={customers:["id","name","email","phone","notes","status"],jobs:["id","title","customerId","employeeId","scheduled","status","amount","notes"],invoices:["id","customerId","description","created","due","amount"]}[kind];
@@ -302,6 +320,7 @@ document.addEventListener("click",event=>{
  if(b.dataset.sub){subTab=b.dataset.sub;edit=null;render();return}
  if(b.dataset.edit){edit={kind:b.dataset.edit,id:b.dataset.id};render();document.querySelector("[data-form='"+b.dataset.edit+"']")?.scrollIntoView({behavior:"smooth",block:"center"});return}
  if(b.dataset.export){csvExport(b.dataset.export);return}
+ if(b.dataset.print){printDoc(b.dataset.print,b.dataset.id);return}
  if(b.dataset.convert){
   const e=db.estimates.find(x=>String(x.id)===String(b.dataset.convert));
   if(!e||db.invoices.some(x=>String(x.estimateId)===String(e.id)))return;
