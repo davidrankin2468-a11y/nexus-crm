@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1523">
+<title>Nexus CRM 2.3 · Interactive Preview</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1523;--side:#101f31;--panel:#17283b;--line:#29465a;--muted:#a0b4c3;--green:#a3f27b;--text:#eff6f9}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",system-ui,Arial,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}
+.app{display:grid;grid-template-columns:235px minmax(0,1fr);min-height:100vh}
+aside{border-right:1px solid var(--line);background:var(--side);padding:22px 14px}
+.brand{font-weight:800;font-size:21px;letter-spacing:.6px;padding:4px 12px 28px}.brand span{color:var(--green)}
+.nav{width:100%;text-align:left;padding:12px 14px;background:none;border:0;border-radius:8px;color:#c7d8e5;margin:3px 0}
+.nav.active,.nav:hover{color:var(--green);background:#244036}
+.sidebar-foot{padding:20px 12px;color:var(--muted);font-size:12px;line-height:1.7}
+main{padding:28px clamp(16px,4vw,46px);max-width:1350px;width:100%}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.eyebrow{font-size:12px;color:var(--green);letter-spacing:1.8px;font-weight:800;text-transform:uppercase}
+h1{font-size:32px;margin:2px 0 0}h2{font-size:20px;margin:0 0 14px}h3{font-size:16px;margin:0 0 12px}
+.muted,small{color:var(--muted)}p{margin:8px 0 14px}.tag{border:1px solid #427159;color:#c5f9ae;border-radius:18px;padding:7px 12px;font-size:12px}
+.alert{background:#1d372f;border:1px solid #365c47;border-radius:10px;padding:12px 15px;margin:21px 0;color:#d9f6d5;font-size:13px}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0}.tab{border:1px solid var(--line);background:#15293b;color:#c8d8e3;padding:9px 14px;border-radius:9px}.tab.active{background:#365b3e;border-color:#659d60;color:#e6ffd9}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}.metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:19px}.metric b{display:block;margin-top:10px;color:var(--green);font-size:25px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:22px;margin:15px 0}.panel a{color:var(--green)}
+.flex{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+label{display:block;color:#bfd1df;font-size:13px;font-weight:600}input,textarea,select{width:100%;margin-top:5px;padding:10px 11px;border:1px solid #3e5c70;border-radius:7px;color:var(--text);background:#0c1b2c;min-width:0}input:focus,select:focus,textarea:focus{outline:2px solid #85d16b;outline-offset:1px}textarea{resize:vertical;min-height:78px}
+button.primary{background:var(--green);border:0;color:#0a1a1a;padding:10px 14px;border-radius:8px;font-weight:750}button.secondary{background:#2c4356;border:1px solid #486173;border-radius:8px;color:#e4f4eb;padding:9px 13px}button.small{padding:7px 10px;font-size:12px}button:focus-visible{outline:2px solid white;outline-offset:2px}
+.tablewrap{overflow:auto}table{border-collapse:collapse;min-width:600px;width:100%;font-size:14px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:middle}th{color:var(--muted);font-weight:600}tr:last-child td{border-bottom:0}
+.status{font-weight:700;color:var(--green)}.inlineform{display:flex;gap:6px;align-items:center}.inlineform select{width:160px;margin:0}.empty{padding:26px;text-align:center;color:var(--muted)}
+#stage{min-height:200px}.note{border-left:3px solid var(--green);padding:7px 11px;color:var(--muted);margin:16px 0}
+@media(max-width:920px){.grid{grid-template-columns:repeat(2,1fr)}.app{grid-template-columns:190px minmax(0,1fr)}}
+@media(max-width:650px){.app{display:block}aside{padding:12px;border-right:0;border-bottom:1px solid var(--line)}.brand{padding:5px}.navbox{display:flex;gap:3px;overflow:auto}.nav{width:auto;white-space:nowrap;padding:9px;font-size:13px}.sidebar-foot{display:none}main{padding:18px}.top h1{font-size:26px}.formgrid{grid-template-columns:1fr}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{padding:12px}.metric b{font-size:20px}}
+</style>
+<!-- Cloudflare deployment initialized for Nexus CRM 2.3 -->
+</head>
+<body>
+<div class="app">
+<aside><div class="brand">◈ NEXUS <span>CRM</span></div><div class="navbox" id="nav" role="navigation" aria-label="CRM main tabs"></div><div class="sidebar-foot">Nexus Software Solutions<br>Version 2.3 · Live Design Preview</div></aside>
+<main><div class="top"><div><div class="eyebrow">Nexus Business Suite</div><h1 id="heading">Dashboard</h1><p class="muted" id="intro">Manage your business in one place</p></div><span class="tag">● Demo Mode · v2.3</span></div>
+<div class="alert">This is a preview with fictional sample records. Changes here are saved only in this browser; they are not sent to your Windows CRM or a cloud database.</div>
+<div class="tabs" id="tabs" aria-label="Section tools"></div><div id="stage" aria-live="polite"></div>
+</main></div>
+<script>
+"use strict";
+const STORAGE="nexus-crm-demo-2.3",statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
+const sections={"Dashboard":["Overview","Recent Activity"],"Customers":["Directory","Customer History"],"Operations":["Jobs","Schedule","Employees"],"Finance":["Estimates","Invoices","Payments","Reports"],"Management":["Company Settings","Security","Backups","Cloud Sync","Licensing"]};
+const intro={"Dashboard":"A live overview of your business","Customers":"Customer directory and contact information","Operations":"Jobs, schedules and team activity","Finance":"Estimates, invoices and payments","Management":"Company settings and administrative tools"};
+const starter=()=>({customers:[{id:1,name:"Olivia Martinez",email:"olivia@example.com",phone:"555-0102",notes:"Garden and landscape work"},{id:2,name:"Harper Construction",email:"harper@example.com",phone:"555-0103",notes:"Residential construction"},{id:3,name:"Cedar Grove Homes",email:"cedar@example.com",phone:"555-0104",notes:"Painting projects"}],jobs:[{id:1,customerId:1,title:"Garden renovation",status:"In Progress",amount:3850},{id:2,customerId:3,title:"Interior repaint",status:"Scheduled",amount:2150},{id:3,customerId:2,title:"Deck repair",status:"Planned",amount:1275}],invoices:[{id:"INV-1042",customer:"Harper Construction",amount:3850,status:"Paid"},{id:"INV-1043",customer:"Olivia Martinez",amount:1275,status:"Unpaid"},{id:"INV-1044",customer:"Cedar Grove Homes",amount:2150,status:"Unpaid"}],activity:["CRM 2.3 preview loaded","Garden renovation is in progress","Interior repaint scheduled"]});
+let db;
+try{const old=JSON.parse(localStorage.getItem(STORAGE));db=(old&&Array.isArray(old.customers)&&Array.isArray(old.jobs)&&Array.isArray(old.invoices))?old:starter()}catch(e){db=starter()}
+let section="Dashboard",sub="Overview",search="",statusFilter="",editing=null;
+const $=id=>document.getElementById(id);
+const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cash=v=>Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
+const findCustomer=id=>db.customers.find(c=>c.id===Number(id));
+const userCustomer=id=>findCustomer(id)?.name||"Unknown customer";
+function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(db))}catch(e){}}
+function activity(msg){db.activity.unshift(msg);db.activity=db.activity.slice(0,25)}
+function table(head,rows){return '<div class="tablewrap"><table><thead><tr>'+head.map(h=>'<th>'+safe(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>'}
+function metric(label,value){return '<div class="metric">'+safe(label)+'<b>'+safe(value)+'</b></div>'}
+function render(){
+ $('nav').innerHTML=Object.keys(sections).map(s=>'<button class="nav'+(s===section?' active':'')+'" data-main="'+s+'" aria-current="'+(s===section?'page':'false')+'">'+safe(s)+'</button>').join('');
+ $('heading').textContent=section;$('intro').textContent=intro[section];
+ $('tabs').innerHTML=sections[section].map(s=>'<button class="tab'+(sub===s?' active':'')+'" data-sub="'+safe(s)+'">'+safe(s)+'</button>').join('');
+ let html="";
+ if(section==="Dashboard"){
+   if(sub==="Recent Activity"){html='<div class="panel"><h2>Recent Activity</h2>'+db.activity.map(a=>'<p>• '+safe(a)+'</p>').join('')+'</div>'}
+   else{
+     const paid=db.invoices.filter(i=>i.status==="Paid").reduce((sum,i)=>sum+i.amount,0);
+     const unpaid=db.invoices.filter(i=>i.status!=="Paid").reduce((sum,i)=>sum+i.amount,0);
+     html='<div class="grid">'+metric("Customers",db.customers.length)+metric("Open jobs",db.jobs.filter(j=>!["Completed","Cancelled"].includes(j.status)).length)+metric("Paid invoice total",cash(paid))+metric("Unpaid invoices",cash(unpaid))+'</div>';
+     html+='<div class="panel"><h2>Recent jobs</h2>'+table(["Job","Customer","Status","Est. amount"],db.jobs.slice().reverse().slice(0,6).map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(userCustomer(j.customerId))+'</td><td><span class="status">'+safe(j.status)+'</span></td><td>'+cash(j.amount)+'</td></tr>'))+'</div>';
+     html+='<p class="note">Dashboard finance totals are based on sample invoice statuses, not bank deposits.</p>';
+   }
+ }
+ if(section==="Customers"){
+   const filtered=db.customers.filter(c=>(c.name+' '+c.email+' '+c.phone).toLowerCase().includes(search.toLowerCase()));
+   if(sub==="Customer History"){html='<div class="panel"><h2>Customer job history</h2>'+table(["Customer","Job","Status"],db.jobs.map(j=>'<tr><td>'+safe(userCustomer(j.customerId))+'</td><td>'+safe(j.title)+'</td><td>'+safe(j.status)+'</td></tr>'))+'</div>'}
+   else{
+    html='<div class="panel"><h2>Add customer</h2><form id="customer-form"><div class="formgrid"><label>Customer name<input required maxlength="200" name="name" placeholder="Customer name"></label><label>Email<input type="email" maxlength="200" name="email" placeholder="Email"></label><label>Phone<input maxlength="80" name="phone" placeholder="Phone"></label><label>Notes<input maxlength="500" name="notes" placeholder="Notes"></label></div><p><button class="primary">Add customer</button></p></form></div>';
+    if(editing!==null){let c=findCustomer(editing);if(c)html+='<div class="panel"><h2>Edit customer · '+safe(c.name)+'</h2><form id="edit-form"><input name="id" type="hidden" value="'+c.id+'"><div class="formgrid"><label>Name<input required maxlength="200" name="name" value="'+safe(c.name)+'"></label><label>Email<input type="email" maxlength="200" name="email" value="'+safe(c.email)+'"></label><label>Phone<input maxlength="80" name="phone" value="'+safe(c.phone)+'"></label><label>Notes<input maxlength="500" name="notes" value="'+safe(c.notes)+'"></label></div><p><button class="primary">Save customer</button> <button type="button" class="secondary" data-action="cancel-edit">Cancel</button></p></form></div>'}
+    html+='<div class="panel"><h2>Customer directory</h2><form id="search-form" class="flex"><label style="flex:1;min-width:200px">Search by name, email or phone<input name="search" value="'+safe(search)+'" placeholder="Search customers"></label><button class="secondary" type="submit">Search</button><button class="secondary" data-action="clear-search" type="button">Clear</button></form><p class="muted">'+filtered.length+' customer(s) found</p>'+table(["Customer","Email","Phone","Action"],filtered.map(c=>'<tr><td>'+safe(c.name)+'</td><td>'+safe(c.email)+'</td><td>'+safe(c.phone)+'</td><td><button class="secondary small" data-edit="'+c.id+'">View / edit</button></td></tr>'))+'</div>';
+   }
+ }
+ if(section==="Operations"){
+  if(sub==="Jobs"){
+   let filtered=db.jobs.filter(j=>!statusFilter||j.status===statusFilter);
+   html='<div class="panel"><h2>Create job</h2><form id="job-form"><div class="formgrid"><label>Customer<select name="customerId" required>'+db.customers.map(c=>'<option value="'+c.id+'">'+safe(c.name)+'</option>').join('')+'</select></label><label>Job title<input name="title" maxlength="200" required placeholder="Job description"></label><label>Estimated amount ($)<input type="number" name="amount" step="0.01" min="0" max="10000000000" required value="0"></label></div><p><button class="primary"'+(!db.customers.length?' disabled':'')+'>Create job</button></p></form></div>';
+   html+='<div class="panel"><h2>Jobs and status</h2><form id="filter-form" class="flex"><label>Filter jobs<select name="status"><option value="">All statuses</option>'+statuses.map(s=>'<option '+(s===statusFilter?'selected ':'')+'value="'+s+'">'+s+'</option>').join('')+'</select></label><button class="secondary" type="submit">Apply filter</button><button class="secondary" type="button" data-action="clear-filter">Clear</button></form><p class="muted">'+filtered.length+' job(s) shown</p>'+table(["Job","Customer","Amount","Update status"],filtered.map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(userCustomer(j.customerId))+'</td><td>'+cash(j.amount)+'</td><td><form class="inlineform" data-status-form="'+j.id+'"><select name="status" aria-label="Status for '+safe(j.title)+'">'+statuses.map(s=>'<option value="'+s+'" '+(j.status===s?'selected':'')+'>'+s+'</option>').join('')+'</select><button class="primary small">Save</button></form></td></tr>'))+'</div>';
+  }else if(sub==="Schedule"){html='<div class="panel"><h2>Scheduling</h2><p>Upcoming demo jobs and their statuses</p>'+table(["Job","Customer","Status"],db.jobs.map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(userCustomer(j.customerId))+'</td><td>'+safe(j.status)+'</td></tr>'))+'<p class="note">The Windows CRM includes appointment scheduling. This preview does not edit appointments.</p></div>'}
+  else html='<div class="panel"><h2>Employees</h2><p>The Windows CRM includes employee records. This design demo does not connect to employee data.</p></div>';
+ }
+ if(section==="Finance"){
+  if(sub==="Invoices"){html='<div class="panel"><h2>Sample invoices</h2>'+table(["Invoice","Customer","Amount","Status"],db.invoices.map(i=>'<tr><td>'+safe(i.id)+'</td><td>'+safe(i.customer)+'</td><td>'+cash(i.amount)+'</td><td><span class="status">'+safe(i.status)+'</span></td></tr>'))+'</div>'}
+  else if(sub==="Reports"){html='<div class="grid">'+metric("Paid",cash(db.invoices.filter(i=>i.status==="Paid").reduce((a,b)=>a+b.amount,0)))+metric("Outstanding",cash(db.invoices.filter(i=>i.status!=="Paid").reduce((a,b)=>a+b.amount,0)))+metric("Jobs",db.jobs.length)+metric("Customers",db.customers.length)+'</div>'}
+  else html='<div class="panel"><h2>'+safe(sub)+'</h2><p>Financial '+safe(sub.toLowerCase())+' are supported in the Windows CRM. This section shows a design preview only.</p></div>';
+ }
+ if(section==="Management"){
+  const copy={"Company Settings":"Company branding, address and organization settings.","Security":"User accounts, roles and permissions. No live authentication is enabled in this demo.","Backups":"Use the versioned CRM ZIP in GitHub to restore source code. Back up the actual Windows database separately and privately.","Cloud Sync":"Local change journaling exists in the Windows CRM. Online synchronization is not yet active.","Licensing":"Commercial licensing and updates are planned for later releases."};
+  html='<div class="panel"><h2>'+safe(sub)+'</h2><p>'+safe(copy[sub])+'</p><p class="note">This website is separate from your actual Windows 11 CRM and never accesses its customers, jobs or administrator accounts.</p>';
+  if(sub==="Backups")html+='<p><a href="https://github.com/davidrankin2468-a11y/nexus-crm/tree/main/backups" target="_blank" rel="noreferrer">Open versioned GitHub source backups</a></p>';
+  if(sub==="Company Settings")html+='<p><button class="secondary" data-action="reset">Reset fictional demo records</button></p>';
+  html+='</div>';
+ }
+ $('stage').innerHTML=html;
+}
+document.addEventListener("click",e=>{
+ const main=e.target.closest("[data-main]"),tab=e.target.closest("[data-sub]"),edit=e.target.closest("[data-edit]"),action=e.target.closest("[data-action]");
+ if(main){section=main.dataset.main;sub=sections[section][0];editing=null;render();return}
+ if(tab){sub=tab.dataset.sub;editing=null;render();return}
+ if(edit){editing=Number(edit.dataset.edit);render();document.getElementById("edit-form")?.scrollIntoView({behavior:"smooth",block:"center"});return}
+ if(action){const a=action.dataset.action;if(a==="cancel-edit")editing=null;if(a==="clear-search")search="";if(a==="clear-filter")statusFilter="";if(a==="reset"&&confirm("Restore fictional demo data in this browser?")){db=starter();persist();search="";statusFilter="";editing=null}render()}
+});
+document.addEventListener("submit",e=>{
+ const f=e.target,kind=f.id,sd=f.dataset.statusForm;
+ if(!["customer-form","edit-form","job-form","search-form","filter-form"].includes(kind)&&!sd)return;
+ e.preventDefault();const d=new FormData(f);
+ if(kind==="search-form"){search=String(d.get("search")||"").trim();render();return}
+ if(kind==="filter-form"){statusFilter=String(d.get("status")||"");render();return}
+ if(kind==="customer-form"||kind==="edit-form"){
+  const name=String(d.get("name")||"").trim().slice(0,200);
+  if(!name){alert("Enter a customer name");return}
+  const record={name,email:String(d.get("email")||"").trim().slice(0,200),phone:String(d.get("phone")||"").trim().slice(0,80),notes:String(d.get("notes")||"").trim().slice(0,500)};
+  if(kind==="customer-form"){record.id=Math.max(0,...db.customers.map(c=>c.id))+1;db.customers.push(record);activity("Customer added: "+name)}else{const id=Number(d.get("id"));const c=findCustomer(id);if(!c)return;Object.assign(c,record);activity("Customer updated: "+name);editing=null}
+ }
+ if(kind==="job-form"){
+  const cid=Number(d.get("customerId")),title=String(d.get("title")||"").trim().slice(0,200),amount=Number(d.get("amount")||0);
+  if(!findCustomer(cid)||!title||!Number.isFinite(amount)||amount<0||amount>1e10){alert("Enter a valid customer, job and amount");return}
+  db.jobs.push({id:Math.max(0,...db.jobs.map(j=>j.id))+1,customerId:cid,title,status:"Planned",amount:Math.round(amount*100)/100});activity("Job created: "+title)
+ }
+ if(sd){const j=db.jobs.find(x=>x.id===Number(sd)),status=String(d.get("status")||"");if(!j||!statuses.includes(status))return;j.status=status;activity("Job status changed: "+j.title+" → "+status)}
+ persist();render();
+});
+render();
+</script>
+</body>
+</html>
