@@ -913,6 +913,19 @@ async function handler(request,env){
   if(result.meta?.changes!==1)return error("Active staff invitation not found",404);
   return response({ok:true});
  }
+ if(path==="/api/license/check"&&method==="GET"){
+  // Staging-only read-only enforcement probe. Never accept tenant identity from the caller.
+  if(!new URL(request.url).hostname.startsWith("nexus-crm-license-staging."))return error("Not found",404);
+  const feature=new URL(request.url).searchParams.get("feature")||"crm";
+  if(!["crm","projects","advanced_reports","automation","nexus_ai"].includes(feature))return error("Unknown feature",400);
+  const license=await first(db,"SELECT l.status,l.period_start,l.period_end,l.grace_until,l.plan_code FROM tenant_licenses l WHERE l.tenant_id=? ORDER BY l.created_at DESC LIMIT 1",user.tenant_id);
+  if(!license)return response({feature,allowed:false,reason:"license_missing",mode:"staging-check-only"});
+  const ents=await all(db,"SELECT feature_key,enabled FROM license_entitlements WHERE plan_code=?",license.plan_code);
+  const t=now(),active=license.status==="active"&&license.period_start!=null&&license.period_end!=null&&Number(license.period_start)<=t&&t<Number(license.period_end);
+  const grace=["past_due","grace"].includes(license.status)&&license.grace_until!=null&&Number(license.grace_until)>t;
+  const enabled=ents.some(e=>e.feature_key===feature&&Number(e.enabled)===1);
+  return response({feature,allowed:(active||grace)&&enabled,reason:!(active||grace)?"license_inactive":!enabled?"feature_not_in_plan":grace?"grace_period":"active",mode:"staging-check-only"});
+ }
  if(path==="/api/license/me"&&method==="GET"){
   // Read-only tenant-scoped license view; does not activate enforcement on legacy pilot accounts.
   const license=await first(db,`SELECT l.id,l.plan_code AS planCode,l.status,l.period_start AS periodStart,
