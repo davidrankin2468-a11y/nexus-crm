@@ -92,7 +92,7 @@ const emailEmployee="nexus-employee-b@example.invalid";
 test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, recovery and backups",async t=>{
  const db=memoryDB();
  // Apply additive schema migrations before first login; seed operator only after bootstrap.
- for(const file of migrations.filter(x=>x!=="005_platform_operator.sql"))db.raw.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
+ for(const file of migrations)db.raw.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
  const a=client(),b=client(),admin=client(),employee=client();
  const setupCode=random();
  await db.prepare("INSERT INTO bootstrap_tokens(token_hash,created_at,expires_at) VALUES(?,?,?)")
@@ -114,6 +114,7 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    setupCode,companyName:"DUPLICATE",email:"duplicate@example.invalid",password:passwordA
   },409);
  });
+ // Apply the same idempotent migration again after the first setup.
  db.raw.exec(readFileSync(new URL("../migrations/005_platform_operator.sql",import.meta.url),"utf8"));
 
  await t.test("CSRF and same-origin protections",async()=>{
