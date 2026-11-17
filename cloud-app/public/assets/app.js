@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:""};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:""};
 async function request(path,method="GET",data=null){
  const headers={"Accept":"application/json"};
  if(data!==null)headers["Content-Type"]="application/json";
@@ -161,15 +161,45 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
-const managementTabs=["Backups","Security"];
+const managementTabs=["Backups","Security","Sales Leads"];
 function describeBackupCounts(counts){
  const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
  return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
 }
+function salesLeadsContent(){
+ if(s.salesError)return panel("Sales inquiries unavailable",'<p>'+safe(s.salesError)+'</p><p>Check the launch site configuration and refresh. Your CRM records are unaffected.</p>');
+ const summary='<div class="cards"><div class="card">Interested businesses<strong>'+s.salesTotal+'</strong></div>'+
+  '<div class="card">New inquiries<strong>'+s.salesNew+'</strong></div>'+
+  '<div class="card">Contacted / closed<strong>'+Math.max(0,s.salesTotal-s.salesNew)+'</strong></div></div>';
+ const statusList=["New","Contacted","Closed"];
+ const rows=s.salesLeads.map(x=>'<tr>'+
+  '<td><a href="mailto:'+encodeURIComponent(x.email)+'" title="Compose email to interested business">'+safe(x.email)+'</a><small class="muted" style="display:block">'+safe(x.company||"Business not supplied")+'</small></td>'+
+  '<td>'+safe(x.industry)+'</td><td>'+safe(x.interestNote||"—")+'</td>'+
+  '<td>'+safe(new Date(x.createdAt*1000).toLocaleDateString())+'</td>'+
+  '<td><form data-form="lead-status" class="actionrow"><input name="id" type="hidden" value="'+safe(x.id)+'">'+
+  '<select name="status" aria-label="Lead status">'+statusList.map(v=>'<option value="'+v+'" '+(v===x.status?"selected":"")+'>'+v+'</option>').join("")+'</select>'+
+  '<button type="submit">Save</button></form><button type="button" data-delete-lead="'+safe(x.id)+'">Delete inquiry</button></td></tr>');
+ return summary+panel("Early-access inquiries",
+ '<p>These requests come from the separate public Nexus CRM website. Only the owner can see their details here. A submitted inquiry is not a CRM account or a sale.</p>'+
+ '<p><a href="https://nexus-crm-showcase.pages.dev/" target="_blank" rel="noopener noreferrer">Open public product website ↗</a></p>'+
+ '<div class="actionrow"><button type="button" data-export-leads="true">Export inquiries CSV</button></div>'+
+ table(["Business / email","Industry","Requested features","Received","Status"],rows))+
+ '<p class="muted">Clicking an email address opens your own email application. No automated outreach or marketing emails are sent by Nexus CRM.</p>';
+}
+function exportLeadsCsv(){
+ const fields=["email","company","industry","interestNote","status","createdAt"];
+ const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+ const content=[fields.join(",")].concat(s.salesLeads.map(x=>fields.map(k=>cell(x[k])).join(","))).join("\r\n");
+ const url=URL.createObjectURL(new Blob([content],{type:"text/csv;charset=utf-8"}));
+ const a=document.createElement("a");a.href=url;a.download="nexus-crm-early-access-inquiries.csv";
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
 function managementContent(){
  const nav='<div class="actionrow">'+managementTabs.map(tab=>
   '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
+ if(s.managementView==="Sales Leads")return nav+salesLeadsContent();
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -303,6 +333,10 @@ async function refresh(){
    const [b,security,activity]=await Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")]);
    s.backupItems=b.items;s.securitySummary=security;s.auditEvents=activity.items;s.recoveryError="";
   }catch(e){s.recoveryError=e?.message||"Unable to load recovery controls";}
+  try{
+   const lead=await request("/api/sales/leads");
+   s.salesLeads=lead.items;s.salesTotal=lead.total;s.salesNew=lead.newCount;s.salesError="";
+  }catch(e){s.salesError=e?.message||"Unable to load inquiries";}
  }
  draw();
 }
@@ -321,6 +355,12 @@ document.addEventListener("click",async e=>{
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
  if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;draw();notice("");return}
+ if(b.dataset.exportLeads){exportLeadsCsv();return}
+ if(b.dataset.deleteLead){
+  if(!confirm("Permanently delete this early-access inquiry? This cannot be undone."))return;
+  try{await request("/api/sales/leads/"+encodeURIComponent(b.dataset.deleteLead)+"/delete","POST",{confirm:"DELETE INQUIRY"});await refresh();notice("Inquiry deleted.");}
+  catch(e){notice(e.message)}return;
+ }
  if(b.dataset.previewBackup){
   try{s.backupPreview=await request("/api/backups/"+encodeURIComponent(b.dataset.previewBackup)+"/preview");draw();notice("Snapshot checked for integrity.");}
   catch(err){notice(err.message)}return;
@@ -358,6 +398,10 @@ document.addEventListener("submit",async e=>{
    const url=s.editingAppointment?"/api/appointments/"+encodeURIComponent(s.editingAppointment):"/api/appointments";
    await request(url,s.editingAppointment?"PATCH":"POST",data);s.editingAppointment=null;
    await refresh();notice("Appointment saved to your private cloud database.");return;
+  }
+  if(type==="lead-status"){
+   await request("/api/sales/leads/"+encodeURIComponent(data.id),"PATCH",{status:data.status});
+   await refresh();notice("Inquiry status saved.");return;
   }
   if(type==="backup"){
    await request("/api/backups","POST",data);s.backupPreview=null;
