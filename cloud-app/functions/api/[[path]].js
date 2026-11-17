@@ -69,15 +69,6 @@ async function handler(request,env){
  if(path==="/api/status"&&method==="GET"){
   const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"2.5-alpha"});
  }
- if(path==="/api/diagnose"&&method==="GET"){
-  const users=await first(db,"SELECT COUNT(*) AS n FROM users");
-  if(users?.n)return error("Not available",404);
-  const salt=hex(crypto.getRandomValues(new Uint8Array(16))),started=Date.now();
-  try{
-    const result=await passwordHash("test-only-probe-password",salt);
-    return response({ok:result.length===64,elapsedMs:Date.now()-started});
-  }catch(e){return response({ok:false,errorName:String(e?.name),errorMessage:String(e?.message).slice(0,200)})}
- }
  if(path==="/api/setup"&&method==="POST"){
   const v=await readJson(request),code=clean(v.setupCode,150),companyName=clean(v.companyName,150),email=clean(v.email,254).toLowerCase(),password=String(v.password||"");
   if(!companyName||!code||!emailOk(email)||password.length<12||password.length>128)return error("Company, email, setup code and a password of at least 12 characters are required");
