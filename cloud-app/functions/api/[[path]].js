@@ -501,6 +501,21 @@ async function handler(request,env){
   const items=await all(db,"SELECT category,action,created_at AS createdAt FROM security_audit WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.tenant_id);
   return response({items});
  }
+ if(path==="/api/security/change-password"&&method==="POST"){
+  const v=await readJson(request);
+  const currentPassword=typeof v.currentPassword==="string"?v.currentPassword:"";
+  const newPassword=typeof v.newPassword==="string"?v.newPassword:"";
+  if(newPassword.length<14||newPassword.length>128)return error("New password must be 14–128 characters",400);
+  if(newPassword===currentPassword)return error("Choose a different password",400);
+  if(!(await verifySensitivePassword(db,user,currentPassword)))return error("Incorrect current password",403);
+  const salt=hex(crypto.getRandomValues(new Uint8Array(16))),newHash=await passwordHash(newPassword,salt,ITERS);
+  const transactions=await db.batch([
+   db.prepare("UPDATE users SET password_hash=?,salt=?,iterations=? WHERE id=? AND tenant_id=?").bind(newHash,salt,ITERS,user.user_id,user.tenant_id),
+   db.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").bind(user.user_id,user.token_hash)
+  ]);
+  if(transactions[0]?.meta?.changes!==1)throw Error("Unable to update password");
+  return response({ok:true,otherSessionsRevoked:transactions[1]?.meta?.changes||0});
+ }
  if(path==="/api/security/logout-others"&&method==="POST"){
   const data=await readJson(request);
   if(!(await verifySensitivePassword(db,user,data.password)))return error("Incorrect account password",403);
