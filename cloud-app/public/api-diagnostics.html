@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexus CRM staging API diagnostics</title>
+<style>body{font:16px system-ui;background:#0c1625;color:#e9f4fa;max-width:650px;margin:32px auto;padding:16px}button{padding:12px;border:0;border-radius:8px;background:#b5f43a;color:#101c25;font-weight:bold}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#172637;padding:16px;border-radius:8px}a{color:#b5f43a}</style>
+<h1>Staging API diagnostics</h1><p>This page tests three read-only endpoints from the same browser origin. It does not change accounts, passwords, licenses, or customer data.</p><button id="run">Run API checks</button><pre id="results">Ready.</pre><p><a href="/">Return to CRM</a></p>
+<script>
+async function run(){const lines=[];for(const path of ['/api/health','/api/me','/api/license/me']){try{const r=await fetch(path,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});const ct=r.headers.get('content-type')||'';const body=await r.text();let detail;if(ct.includes('application/json')){try{const data=JSON.parse(body);detail=path==='/api/me'?(data.user?'Signed-in user recognized':data.error||'No user'):path==='/api/license/me'?(data.error||('configured='+data.configured+', mode='+data.mode)):('ok='+data.ok)}catch{detail='Invalid JSON'}}else{detail=body.includes('<!doctype html')||body.includes('<html')?'HTML dashboard returned instead of API JSON':'Non-JSON response'}lines.push(path+' | HTTP '+r.status+' | '+ct+' | '+detail)}catch(e){lines.push(path+' | Network error: '+e.message)}}document.getElementById('results').textContent=lines.join('\n')}
+document.getElementById('run').addEventListener('click',run);run();
+</script></html>
