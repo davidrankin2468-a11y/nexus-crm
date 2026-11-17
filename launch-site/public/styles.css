@@ -21,3 +21,90 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 @media(max-width:760px){.wrap{width:min(100% - 30px,650px)}.topline{font-size:9px;letter-spacing:.03em}.header{height:auto;min-height:82px;flex-wrap:wrap;justify-content:center;padding:16px 0}.links{justify-content:center;flex-wrap:wrap;gap:12px 20px;font-size:12px}.nav-cta{padding:9px}.hero h1{font-size:clamp(39px,11vw,57px)}.hero{padding-top:37px}.lead{font-size:15px}.mini-app{transform:none}.trust-band .wrap{padding:24px 0;gap:12px}.trust-band span{width:100%}.trust-band strong{font-size:12px}.section{padding:70px 0}.feature-grid,.industry-grid,.pricing-grid,.steps,.interest-section{grid-template-columns:1fr}.feature{min-height:auto}.interest-copy{padding-top:0}.interest-card{padding:25px}.footer-grid{grid-template-columns:1fr 1fr;gap:25px}.section-intro{margin-bottom:27px}.mini-side{padding:14px 6px}}
 @media(max-width:440px){.mini-app{grid-template-columns:95px minmax(0,1fr);min-height:300px}.mini-nav{font-size:9px;padding:10px 5px}.mini-side-foot{font-size:7px}.mini-logo{font-size:10px}.mini-main{padding:17px 10px}.mini-head b{font-size:14px}.mini-head small{font-size:8px}.stat-grid{gap:5px}.stat{padding:9px 6px}.stat strong{font-size:15px}.stat span,.stat small{font-size:8px}.mini-table .mini-row{gap:5px;padding:9px 7px}.mini-pill{font-size:7px}.buttonrow{flex-direction:column}.buttonrow .btn{width:100%}.footer-grid{grid-template-columns:1fr}.proof{font-size:11px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.btn{transition:none}.btn:hover{transform:none}}
+
+/* Mobile-first sales showcase refinement — November 2026 */
+.menu-toggle{display:none}
+:where(a,button,input,select,textarea):focus-visible{outline:3px solid var(--lime);outline-offset:2px}
+:where(.hero,.hero-copy,.hero-art,.section,.interest-copy,.interest-card,.mini-app,.mini-main,.mini-table){min-width:0}
+.interest-card label,.interest-card .consent{overflow-wrap:break-word}
+.brand{min-width:0}
+@media(max-width:760px){
+ html{scroll-padding-top:96px}
+ .header.has-mobile-menu{
+   position:sticky;top:0;z-index:50;width:100%;min-height:70px;
+   display:grid;grid-template-columns:minmax(0,1fr) auto;justify-content:space-between;
+   align-items:center;gap:10px;padding:13px 15px;margin:0;
+   background:#0b1b27;border-bottom:1px solid #345160;
+ }
+ .header.has-mobile-menu .brand{font-size:16px;letter-spacing:0}
+ .header.has-mobile-menu .brandmark{width:39px;height:39px;flex:none}
+ .header.has-mobile-menu .menu-toggle{
+   display:inline-flex;min-height:46px;min-width:86px;
+   justify-content:center;align-items:center;gap:7px;
+   background:#1d3742;border:1px solid #587766;border-radius:10px;
+   color:var(--lime);font-size:14px;font-weight:750;
+ }
+ .header.has-mobile-menu .links{
+   position:absolute;left:0;right:0;top:100%;z-index:55;
+   display:none;align-items:stretch;gap:4px;flex-direction:column;
+   padding:12px 15px 17px;background:#0e2330;
+   box-shadow:0 16px 28px #0009;border-bottom:1px solid #48645a;
+ }
+ .header.has-mobile-menu .links.open{display:flex}
+ .header.has-mobile-menu .links a{
+   min-height:47px;display:flex;align-items:center;padding:10px 14px;
+   font-size:15px;border-radius:9px;
+ }
+ .header.has-mobile-menu .links .nav-cta{
+   justify-content:center;margin-top:5px;background:var(--lime);
+   color:#0b1d11!important;font-weight:850;
+ }
+ .hero{padding:39px 0 54px}
+ .hero-copy .eyebrow{font-size:10px;line-height:1.5}
+ .hero h1{font-size:clamp(36px,10vw,53px);letter-spacing:-.048em;line-height:1.12}
+ .hero .lead{font-size:16px;line-height:1.65}
+ .buttonrow{margin:27px 0 19px}
+ .buttonrow .btn{min-height:50px;font-size:15px}
+ .hero-art{padding:22px 0 0;max-width:100%}
+ .mini-app{transform:none;max-width:100%}
+ .trust-band .wrap{justify-content:start}
+ .feature,.industry,.plan{padding:23px}
+ .interest-card{padding:22px 18px}
+ .interest-card label:not(.consent){font-size:14px;margin-top:16px}
+ .interest-card :is(input:not([type=checkbox]),select,textarea),.withdraw-card input{
+   font-size:16px;min-height:48px;
+ }
+ .interest-card .consent{font-size:13px;line-height:1.55}
+ .interest-card .consent input{min-width:20px;min-height:20px}
+ .submit-btn,.withdraw-card .btn,.plan-link{min-height:48px}
+ .section-intro h2,.interest-copy h2{overflow-wrap:break-word}
+ .faq summary{min-height:54px}
+ .footer-grid a{min-height:28px;display:inline-flex;align-items:center}
+ .receipt code{overflow-wrap:anywhere}
+}
+@media(max-width:440px){
+ .mini-app{display:block;min-height:0}
+ .mini-side{display:none}
+ .mini-main{padding:18px 14px}
+ .mini-head b{font-size:18px}
+ .mini-head small{font-size:11px}
+ .mini-breadcrumb{font-size:9px}
+ .stat-grid{gap:7px;margin:17px 0}
+ .stat{padding:12px 7px}
+ .stat span{font-size:10px;line-height:1.3}
+ .stat strong{font-size:19px}
+ .stat small{font-size:9px}
+ .mini-table .mini-row{gap:7px;padding:13px 8px;font-size:10px}
+ .mini-row small{font-size:9px}
+ .mini-pill{font-size:9px}
+ .footer-grid{grid-template-columns:1fr}
+ .proof{font-size:12px}
+}
+@media(max-width:360px){
+ .header.has-mobile-menu .brand{font-size:14px}
+ .header.has-mobile-menu .brand small{font-size:8px}
+ .header.has-mobile-menu .brandmark{width:35px;height:35px}
+ .header.has-mobile-menu .menu-toggle{min-width:76px}
+ .hero h1{font-size:36px}
+ .stat strong{font-size:17px}
+}
