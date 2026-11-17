@@ -107,6 +107,84 @@ function checkInvoice(v){
  return x;
 }
 
+// Recovery snapshots contain business records only. They do not include credentials, sessions, or authentication keys.
+// In-app snapshots share the current D1 database and are NOT independent/offsite disaster backups.
+const SNAPSHOT_DEFS=[
+ {table:"customers",cols:["id","name","email","phone","notes","created_at","updated_at"]},
+ {table:"employees",cols:["id","name","job_title","email","phone","status","created_at","updated_at"]},
+ {table:"jobs",cols:["id","customer_id","title","status","amount_cents","scheduled_date","created_at","updated_at"]},
+ {table:"estimates",cols:["id","customer_id","estimate_number","description","amount_cents","status","created_at","updated_at"]},
+ {table:"invoices",cols:["id","customer_id","estimate_id","invoice_number","description","amount_cents","due_date","created_at"]},
+ {table:"appointments",cols:["id","job_id","employee_id","appointment_date","appointment_time","location","notes","created_at","updated_at"]},
+ {table:"payments",cols:["id","invoice_id","amount_cents","paid_date","method","note","created_at"]}
+];
+const MAX_SNAPSHOTS=30,MAX_SNAPSHOT_BYTES=1800000,MAX_SNAPSHOT_ROWS=2500,MAX_RECOVERY_ROWS=250;
+async function buildSnapshot(db,tenantId){
+ const statements=SNAPSHOT_DEFS.map(def=>
+  db.prepare("SELECT "+def.cols.join(",")+" FROM "+def.table+" WHERE tenant_id=? ORDER BY id LIMIT 2501").bind(tenantId));
+ const queries=await db.batch(statements),records={},counts={};
+ for(let i=0;i<SNAPSHOT_DEFS.length;i++){
+  const def=SNAPSHOT_DEFS[i],rows=queries[i]?.results||[];
+  if(rows.length>MAX_SNAPSHOT_ROWS)throw new Error("Backup exceeds the current record count limit");
+  records[def.table]=rows;counts[def.table]=rows.length;
+ }
+ const snapshot={schemaVersion:1,records};
+ const payload=JSON.stringify(snapshot);
+ if(payload.length>MAX_SNAPSHOT_BYTES)throw new Error("Backup exceeds the current size limit");
+ return {payload,counts,digest:await hash(payload)};
+}
+async function storeSnapshot(db,user,note){
+ const n=await first(db,"SELECT COUNT(*) AS n FROM backup_snapshots WHERE tenant_id=?",user.tenant_id);
+ if(n?.n>=MAX_SNAPSHOTS)throw new Error("Backup limit reached; contact support before adding more snapshots");
+ const content=await buildSnapshot(db,user.tenant_id);
+ const id=crypto.randomUUID(),time=now();
+ await db.prepare("INSERT INTO backup_snapshots(id,tenant_id,created_by,created_at,schema_version,note,counts_json,payload_json,sha256) VALUES(?,?,?,?,1,?,?,?,?)")
+ .bind(id,user.tenant_id,user.user_id,time,clean(note,100),JSON.stringify(content.counts),content.payload,content.digest).run();
+ return {id,createdAt:time,counts:content.counts};
+}
+async function findSnapshot(db,user,id){
+ const row=await first(db,"SELECT id,tenant_id,created_at,note,counts_json,payload_json,sha256,schema_version FROM backup_snapshots WHERE id=? AND tenant_id=?",id,user.tenant_id);
+ if(!row)return null;
+ if(row.schema_version!==1||!same(await hash(row.payload_json),row.sha256))throw new Error("Snapshot integrity check failed");
+ const parsed=JSON.parse(row.payload_json);
+ if(parsed.schemaVersion!==1||!parsed.records||typeof parsed.records!=="object")throw new Error("Snapshot format not supported");
+ let total=0;
+ for(const def of SNAPSHOT_DEFS){
+  const items=parsed.records[def.table];
+  if(!Array.isArray(items)||items.length>MAX_SNAPSHOT_ROWS)throw new Error("Snapshot has an invalid table");
+  total+=items.length;
+  for(const entry of items){
+   if(!entry||typeof entry!=="object"||!entry.id)throw new Error("Snapshot contains an invalid record");
+   for(const col of def.cols)if(!(col in entry))throw new Error("Snapshot has missing columns");
+  }
+ }
+ return {row,records:parsed.records,total,counts:JSON.parse(row.counts_json)};
+}
+async function verifySensitivePassword(db,user,password){
+ if(typeof password!=="string"||password.length>128||password.length<12)return false;
+ const rateKey=await hash("security-action|"+user.user_id);
+ if(await throttled(db,rateKey))throw new Error("Too many security attempts; try again later");
+ const entry=await first(db,"SELECT password_hash,salt,iterations FROM users WHERE id=? AND tenant_id=?",user.user_id,user.tenant_id);
+ const test=await passwordHash(password,entry?.salt||"4aaf994521f56bead3aa815d0a3379cc",entry?.iterations||ITERS);
+ if(!entry||!same(test,entry.password_hash)){
+  await badLogin(db,rateKey);return false;
+ }
+ await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
+ return true;
+}
+async function logAudit(db,user,path,method){
+ const category=path.startsWith("/api/backups")?"backup":path.startsWith("/api/security")?"security":
+  path.split("/")[2]||"system";
+ const safeAction=clean(method+" "+path.replace(/\/[0-9a-fA-F-]{36}(?=\/|$)/g,"/:id"),120);
+ try{await db.prepare("INSERT INTO security_audit(id,tenant_id,user_id,category,action,resource_id,created_at) VALUES(?,?,?,?,?,?,?)")
+  .bind(crypto.randomUUID(),user.tenant_id,user.user_id,category,safeAction,"",now()).run()}
+ catch(e){console.error("Audit write failed",String(e?.message||e).slice(0,140))}
+}
+async function companyRecordCounts(db,tenantId){
+ const reads=await db.batch(SNAPSHOT_DEFS.map(d=>db.prepare("SELECT COUNT(*) AS n FROM "+d.table+" WHERE tenant_id=?").bind(tenantId)));
+ return Object.fromEntries(SNAPSHOT_DEFS.map((d,i)=>[d.table,reads[i]?.results?.[0]?.n||0]));
+}
+
 async function handler(request,env){
  const db=env.DB,method=request.method.toUpperCase(),path=new URL(request.url).pathname.replace(/\/+$/,"");
  if(!db)return error("Cloud database not configured",503);
@@ -350,12 +428,84 @@ async function handler(request,env){
     `,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id);
   return response({totals:{...totals,outstanding:Math.round(((totals?.invoiceTotal||0)-(totals?.paymentTotal||0))*100)/100}});
  }
+ // Recovery and security controls are owner-only, not available to future staff login accounts.
+ if(path.startsWith("/api/backups")||path.startsWith("/api/security/")){
+  if(user.role!=="owner")return error("Owner account required",403);
+ }
+ if(path==="/api/backups"&&method==="GET"){
+  const list=await all(db,"SELECT id,created_at AS createdAt,note,counts_json AS countsJson FROM backup_snapshots WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 30",user.tenant_id);
+  return response({items:list.map(x=>({id:x.id,createdAt:x.createdAt,note:x.note,counts:JSON.parse(x.countsJson)})),limit:MAX_SNAPSHOTS,storage:"same-database",timeTravelAvailable:true});
+ }
+ if(path==="/api/backups"&&method==="POST"){
+  const body=await readJson(request);
+  const note=clean(body.note||"Manual safety snapshot",100);
+  const created=await storeSnapshot(db,user,note);
+  return response({ok:true,snapshot:created},201);
+ }
+ if(path.startsWith("/api/backups/")&&path.endsWith("/preview")&&method==="GET"){
+  const id=decodeURIComponent(path.slice("/api/backups/".length,-"/preview".length));
+  const data=await findSnapshot(db,user,id);
+  if(!data)return error("Backup not found",404);
+  const currentCounts=await companyRecordCounts(db,user.tenant_id);
+  return response({snapshot:{id:data.row.id,createdAt:data.row.created_at,note:data.row.note,counts:data.counts,total:data.total},
+   integrityVerified:true,currentCounts,recoveryMode:"missing-records-only",
+   warning:"Recovery adds missing records only. It does not overwrite edits or delete newer records."});
+ }
+ if(path.startsWith("/api/backups/")&&path.endsWith("/recover")&&method==="POST"){
+  const id=decodeURIComponent(path.slice("/api/backups/".length,-"/recover".length));
+  const body=await readJson(request);
+  if(body.confirm!=="RECOVER MISSING RECORDS")return error("Confirmation phrase is required",400);
+  if(!(await verifySensitivePassword(db,user,body.password)))return error("Incorrect account password",403);
+  const data=await findSnapshot(db,user,id);
+  if(!data)return error("Backup not found",404);
+  if(data.total>MAX_RECOVERY_ROWS)return error("This snapshot exceeds the current safe recovery limit; use D1 Time Travel with support",409);
+  // Create an additional pre-recovery checkpoint. Abort recovery if this fails.
+  const checkpoint=await storeSnapshot(db,user,"Automatic checkpoint before missing-record recovery");
+  const operations=[];
+  for(const def of SNAPSHOT_DEFS){
+   for(const row of data.records[def.table]){
+    const columns=["tenant_id",...def.cols];
+    const params=[user.tenant_id,...def.cols.map(key=>row[key])];
+    operations.push(db.prepare("INSERT OR IGNORE INTO "+def.table+"("+columns.join(",")+") VALUES("+columns.map(()=>"?").join(",")+")").bind(...params));
+   }
+  }
+  let restored=0;
+  if(operations.length){
+   const results=await db.batch(operations); // Transaction: no partial recovery on SQL error.
+   restored=results.reduce((sum,r)=>sum+(r?.meta?.changes||0),0);
+  }
+  return response({ok:true,restored,skipped:data.total-restored,checkpointId:checkpoint.id,mode:"missing-records-only"});
+ }
+ if(path==="/api/security/summary"&&method==="GET"){
+  const s=await first(db,"SELECT COUNT(*) AS count FROM sessions WHERE user_id=? AND expires_at>?",user.user_id,now());
+  const b=await first(db,"SELECT COUNT(*) AS count,MAX(created_at) AS lastBackup FROM backup_snapshots WHERE tenant_id=?",user.tenant_id);
+  return response({activeSessions:s?.count||0,backups:b?.count||0,lastBackupAt:b?.lastBackup||null,
+   mfaEnabled:false,independentBackupEnabled:false,d1TimeTravelDays:30,verifiedDatabaseStorage:"production"});
+ }
+ if(path==="/api/security/activity"&&method==="GET"){
+  const items=await all(db,"SELECT category,action,created_at AS createdAt FROM security_audit WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.tenant_id);
+  return response({items});
+ }
+ if(path==="/api/security/logout-others"&&method==="POST"){
+  const data=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,data.password)))return error("Incorrect account password",403);
+  const result=await db.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").bind(user.user_id,user.token_hash).run();
+  return response({ok:true,otherSessionsRevoked:result.meta?.changes||0});
+ }
  return error("Not found",404);
 }
 export async function onRequest({request,env}){
- try{return await handler(request,env)}
+ try{
+  const result=await handler(request,env);
+  if(request.method!=="GET"&&result.status>=200&&result.status<300&&
+   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security)(\/|$)/.test(new URL(request.url).pathname)){
+   const user=await current(request,env.DB).catch(()=>null);
+   if(user)await logAudit(env.DB,user,new URL(request.url).pathname,request.method);
+  }
+  return result;
+ }
  catch(e){
-  if(/^(JSON body required|Request too large|Invalid JSON|JSON object required|Customer name is required|Invalid customer email|Job requires|Invalid job status|Invalid job amount|Invalid date|Employee name is required|Invalid employee email|Invalid employee status|Choose a job|Enter a valid appointment date|Enter a valid appointment time|Amount must|Due date must|Invalid due date|Payment date must|Invalid payment date|Estimate requires|Invoice requires|Invalid estimate status|Choose an invoice|Invalid payment method)/.test(e?.message||""))return error(e.message);
+  if(/^(JSON body required|Request too large|Invalid JSON|JSON object required|Customer name is required|Invalid customer email|Job requires|Invalid job status|Invalid job amount|Invalid date|Employee name is required|Invalid employee email|Invalid employee status|Choose a job|Enter a valid appointment date|Enter a valid appointment time|Amount must|Due date must|Invalid due date|Payment date must|Invalid payment date|Estimate requires|Invoice requires|Invalid estimate status|Choose an invoice|Invalid payment method|Backup exceeds|Backup limit reached|Snapshot integrity|Snapshot format|Snapshot has|Snapshot contains|Too many security attempts)/.test(e?.message||""))return error(e.message);
   console.error("Nexus CRM error:",String(e?.message||e).slice(0,240));
   return error("Service error; please try again",500);
  }
