@@ -69,22 +69,14 @@ async function handler(request,env){
  if(path==="/api/status"&&method==="GET"){
   const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"2.5-alpha"});
  }
- if(path==="/api/diagnose"&&method==="POST"){
-  const v=await readJson(request);
-  const supplied=clean(v.setupCode,150);
-  const present=await first(db,"SELECT token_hash FROM bootstrap_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?",await hash(supplied),now());
-  if(!present)return error("Unauthorized",403);
-  const steps=[];
+ if(path==="/api/diagnose"&&method==="GET"){
+  const users=await first(db,"SELECT COUNT(*) AS n FROM users");
+  if(users?.n)return error("Not available",404);
+  const salt=hex(crypto.getRandomValues(new Uint8Array(16))),started=Date.now();
   try{
-   const salt=hex(crypto.getRandomValues(new Uint8Array(16)));
-   steps.push("salt generated");
-   const start=Date.now();
-   const hashResult=await passwordHash("diagnostic-test-password-dummy",salt);
-   steps.push("PBKDF2 completed in "+(Date.now()-start)+"ms");
-   return response({success:hashResult.length===64,steps});
-  }catch(e){
-   return response({success:false,steps,errorName:String(e?.name),errorMessage:String(e?.message).slice(0,180)},200);
-  }
+    const result=await passwordHash("test-only-probe-password",salt);
+    return response({ok:result.length===64,elapsedMs:Date.now()-started});
+  }catch(e){return response({ok:false,errorName:String(e?.name),errorMessage:String(e?.message).slice(0,200)})}
  }
  if(path==="/api/setup"&&method==="POST"){
   const v=await readJson(request),code=clean(v.setupCode,150),companyName=clean(v.companyName,150),email=clean(v.email,254).toLowerCase(),password=String(v.password||"");
