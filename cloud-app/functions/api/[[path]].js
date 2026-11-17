@@ -203,10 +203,55 @@ async function inviteRateLimit(db,request,invalid=false){
  return true;
 }
 
+// RFC 6238: authenticator seeds are encrypted at rest under Cloudflare Pages secret.
+const b32Alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function base32(bytes){
+ let value=0,bits=0,out="";
+ for(const b of bytes){value=(value<<8)|b;bits+=8;while(bits>=5){bits-=5;out+=b32Alphabet[(value>>>bits)&31]}}
+ if(bits)out+=b32Alphabet[(value<<(5-bits))&31];
+ return out;
+}
+async function mfaEncryptionKey(env){
+ if(typeof env.MFA_MASTER_KEY!=="string"||!/^[0-9a-f]{64}$/i.test(env.MFA_MASTER_KEY))
+  throw new Error("MFA encryption secret not configured");
+ return crypto.subtle.importKey("raw",unhex(env.MFA_MASTER_KEY),"AES-GCM",false,["encrypt","decrypt"]);
+}
+async function sealMfa(env,userId,bytes){
+ const iv=crypto.getRandomValues(new Uint8Array(12));
+ const ciphertext=await crypto.subtle.encrypt({name:"AES-GCM",iv,
+  additionalData:new TextEncoder().encode(userId)},await mfaEncryptionKey(env),bytes);
+ return {secretCipherHex:hex(new Uint8Array(ciphertext)),secretIvHex:hex(iv)};
+}
+async function openMfa(env,userId,row){
+ return new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM",iv:unhex(row.secret_iv_hex),
+  additionalData:new TextEncoder().encode(userId)},
+  await mfaEncryptionKey(env),unhex(row.secret_cipher_hex)));
+}
+async function otpForStep(secretBytes,step){
+ const counter=new Uint8Array(8);new DataView(counter.buffer).setBigUint64(0,BigInt(step));
+ const key=await crypto.subtle.importKey("raw",secretBytes,{name:"HMAC",hash:"SHA-1"},false,["sign"]);
+ const d=new Uint8Array(await crypto.subtle.sign("HMAC",key,counter));
+ const offset=d[d.length-1]&15;
+ const n=(((d[offset]&127)<<24)|((d[offset+1]&255)<<16)|((d[offset+2]&255)<<8)|d[offset+3])>>>0;
+ return String(n%1000000).padStart(6,"0");
+}
+async function verifyOtp(secretBytes,code,lastUsedStep=-1){
+ if(typeof code!=="string"||!/^\d{6}$/.test(code))return null;
+ const t=Math.floor(now()/30);
+ for(const delta of [-1,0,1]){
+  const candidate=t+delta;
+  if(candidate>=0&&candidate>lastUsedStep&&same(await otpForStep(secretBytes,candidate),code))return candidate;
+ }
+ return null;
+}
+const MFA_CHALLENGE_SECONDS=300;
+
 function permitted(role,method,path){
  const ownSecurity=(path==="/api/security/change-password"&&method==="POST")||
   (path==="/api/security/recovery-codes"&&method==="POST")||
-  (path==="/api/security/recovery-count"&&method==="GET");
+  (path==="/api/security/recovery-count"&&method==="GET")||
+  (path==="/api/security/mfa/status"&&method==="GET")||
+  (["/api/security/mfa/start","/api/security/mfa/confirm","/api/security/mfa/disable"].includes(path)&&method==="POST");
  if(role==="owner")return true;
  if(ownSecurity)return role==="admin"||role==="employee";
  if(role==="admin")return /^\/api\/(dashboard|customers|jobs|employees|appointments|estimates|invoices|payments|reports)(\/|$)/.test(path);
@@ -573,8 +618,9 @@ async function handler(request,env){
  // account may still manage its own password and one-time recovery codes.
  if(path.startsWith("/api/backups")||path.startsWith("/api/security/")){
   const ownCredentials=(method==="POST"&&(
-   path==="/api/security/change-password"||path==="/api/security/recovery-codes"))||
-   (method==="GET"&&path==="/api/security/recovery-count");
+   path==="/api/security/change-password"||path==="/api/security/recovery-codes"||
+   path==="/api/security/mfa/start"||path==="/api/security/mfa/confirm"||path==="/api/security/mfa/disable"))||
+   (method==="GET"&&(path==="/api/security/recovery-count"||path==="/api/security/mfa/status"));
   if(user.role!=="owner"&&!ownCredentials)return error("Owner account required",403);
  }
  if(path==="/api/backups"&&method==="GET"){
