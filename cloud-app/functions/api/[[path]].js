@@ -283,6 +283,46 @@ async function handler(request,env){
   await logAudit(db,{tenant_id:invite.id,user_id:newUserId},"/api/invitations/accept","POST");
   return response({ok:true,company:invite.company_name,email:invite.owner_email,csrf:session.csrf},201,{"Set-Cookie":setCookie(session.token)});
  }
+ // Staff activation stays separate from tenant-owner creation; existing users are not changed.
+ if(path==="/api/staff/invitations/preview"&&method==="POST"){
+  const v=await readJson(request),token=clean(v.token,128).toLowerCase();
+  if(!await inviteRateLimit(db,request))return error("Too many attempts; try later",429);
+  if(!inviteTokenOk(token)){
+   await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403);
+  }
+  const item=await first(db,`SELECT si.email,si.role,si.expires_at AS expiresAt,t.name AS companyName
+    FROM staff_invitations si JOIN tenants t ON t.id=si.tenant_id
+    WHERE si.token_hash=? AND si.redeemed_at IS NULL AND si.revoked_at IS NULL AND si.expires_at>?`,await hash(token),now());
+  if(!item){await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403)}
+  return response({ok:true,...item});
+ }
+ if(path==="/api/staff/invitations/accept"&&method==="POST"){
+  const v=await readJson(request),token=clean(v.token,128).toLowerCase(),password=typeof v.password==="string"?v.password:"";
+  if(!await inviteRateLimit(db,request))return error("Too many attempts; try later",429);
+  if(!inviteTokenOk(token)){
+   await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403);
+  }
+  if(!accountPasswordOk(password))return error("Choose a password of 14–128 characters",400);
+  const tokenHash=await hash(token),t=now();
+  const invite=await first(db,`SELECT id,tenant_id,email,role FROM staff_invitations
+   WHERE token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,tokenHash,t);
+  if(!invite){await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403)}
+  if(await first(db,"SELECT id FROM users WHERE email=?",invite.email))return error("Account already exists for this email",409);
+  const uid=crypto.randomUUID(),salt=hex(crypto.getRandomValues(new Uint8Array(16))),ph=await passwordHash(password,salt,ITERS);
+  const operations=await db.batch([
+   db.prepare(`INSERT INTO users(id,tenant_id,email,password_hash,salt,iterations,role,created_at)
+     SELECT ?,tenant_id,email,?,?,?,role,? FROM staff_invitations
+     WHERE id=? AND token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`)
+    .bind(uid,ph,salt,ITERS,t,invite.id,tokenHash,t),
+   db.prepare(`UPDATE staff_invitations SET redeemed_at=?,redeemed_user_id=?
+     WHERE id=? AND token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`)
+    .bind(t,uid,invite.id,tokenHash,t)
+  ]);
+  if(operations.some(x=>x.meta?.changes!==1))throw Error("Staff invitation was not redeemed");
+  const session=await issue(db,uid);
+  await logAudit(db,{tenant_id:invite.tenant_id,user_id:uid},"/api/staff/invitations/accept","POST");
+  return response({ok:true,role:invite.role,csrf:session.csrf},201,{"Set-Cookie":setCookie(session.token)});
+ }
  const user=await current(request,db);
  if(!user)return error("Please sign in",401);
  if(path==="/api/me"&&method==="GET"){
@@ -294,11 +334,20 @@ async function handler(request,env){
   await db.prepare("DELETE FROM sessions WHERE token_hash=?").bind(user.token_hash).run();
   return response({ok:true},200,{"Set-Cookie":setCookie("",true)});
  }
+ // Server-enforced RBAC: UI visibility is never relied upon for security.
+ // Admin can operate business/Finance; employee can only read nonfinancial workflows.
+ if(user.role==="admin"){
+  if(!(/^\/api\/(dashboard|customers|jobs|employees|appointments|estimates|invoices|payments|reports)(\/|$)/.test(path)))
+   return error("Company owner permissions required",403);
+ }else if(user.role==="employee"){
+  if(method!=="GET"||!(/^\/api\/(dashboard|customers|jobs|employees|appointments)(\/|$)/.test(path)))
+   return error("This staff role has read-only access to company operations",403);
+ }else if(user.role!=="owner")return error("Invalid account role",403);
  if(path==="/api/dashboard"&&method==="GET"){
   const c=await first(db,"SELECT COUNT(*) AS count FROM customers WHERE tenant_id=?",user.tenant_id);
   const j=await first(db,"SELECT COUNT(*) AS count FROM jobs WHERE tenant_id=? AND status NOT IN ('Cancelled','Completed')",user.tenant_id);
   const v=await first(db,"SELECT COALESCE(SUM(amount_cents),0) AS amount FROM jobs WHERE tenant_id=?",user.tenant_id);
-  return response({customers:c?.count||0,openJobs:j?.count||0,jobPipeline:(v?.amount||0)/100});
+  return response({customers:c?.count||0,openJobs:j?.count||0,jobPipeline:user.role==="employee"?0:(v?.amount||0)/100,financialHidden:user.role==="employee"});
  }
  if(path==="/api/customers"&&method==="GET"){
   return response({items:await all(db,"SELECT id,name,email,phone,notes,created_at AS createdAt FROM customers WHERE tenant_id=? ORDER BY created_at DESC LIMIT 500",user.tenant_id)});
@@ -607,6 +656,45 @@ async function handler(request,env){
   if(result.meta?.changes!==1)return error("Inquiry not found",404);
   return response({ok:true});
  }
+ if(path.startsWith("/api/staff/")){
+  if(user.role!=="owner")return error("Only company owners can manage staff access",403);
+ }
+ if(path==="/api/staff/users"&&method==="GET"){
+  const items=await all(db,`SELECT id,email,role,created_at AS createdAt FROM users
+    WHERE tenant_id=? ORDER BY created_at ASC LIMIT 100`,user.tenant_id);
+  return response({items});
+ }
+ if(path==="/api/staff/invitations"&&method==="GET"){
+  const items=await all(db,`SELECT id,email,role,created_at AS createdAt,expires_at AS expiresAt,redeemed_at AS redeemedAt,revoked_at AS revokedAt
+   FROM staff_invitations WHERE tenant_id=? ORDER BY created_at DESC LIMIT 100`,user.tenant_id);
+  return response({items});
+ }
+ if(path==="/api/staff/invitations"&&method==="POST"){
+  const v=await readJson(request),email=clean(v.email,254).toLowerCase(),role=clean(v.role,20);
+  if(!emailOk(email)||!["admin","employee"].includes(role))return error("Valid staff email and role required",400);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect owner password",403);
+  if(await first(db,"SELECT id FROM users WHERE email=?",email))return error("An account already exists for this email",409);
+  const active=await first(db,`SELECT COUNT(*) AS n FROM staff_invitations
+    WHERE tenant_id=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,user.tenant_id,now());
+  if(active?.n>=25)return error("Only 25 active staff invitations are allowed in the pilot",409);
+  const existing=await first(db,`SELECT id FROM staff_invitations WHERE tenant_id=? AND email=?
+    AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,user.tenant_id,email,now());
+  if(existing)return error("An active invitation already exists for this email",409);
+  const token=secret(),id=crypto.randomUUID(),t=now(),expiresAt=t+INVITE_LIFETIME;
+  await db.prepare(`INSERT INTO staff_invitations(id,tenant_id,email,role,token_hash,created_by,created_at,expires_at)
+    VALUES(?,?,?,?,?,?,?,?)`)
+   .bind(id,user.tenant_id,email,role,await hash(token),user.user_id,t,expiresAt).run();
+  return response({ok:true,id,email,role,expiresAt,token},201);
+ }
+ if(path.startsWith("/api/staff/invitations/")&&path.endsWith("/revoke")&&method==="POST"){
+  const id=decodeURIComponent(path.slice("/api/staff/invitations/".length,-"/revoke".length)),v=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect owner password",403);
+  const result=await db.prepare(`UPDATE staff_invitations SET revoked_at=?
+     WHERE id=? AND tenant_id=? AND redeemed_at IS NULL AND revoked_at IS NULL`)
+   .bind(now(),id,user.tenant_id).run();
+  if(result.meta?.changes!==1)return error("Active staff invitation not found",404);
+  return response({ok:true});
+ }
  if(path.startsWith("/api/platform/")){
   if(!(await platformOperator(db,user)))return error("Nexus platform operator access required",403);
  }
@@ -655,7 +743,7 @@ export async function onRequest({request,env}){
  try{
   const result=await handler(request,env);
   if(request.method!=="GET"&&result.status>=200&&result.status<300&&
-   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security|sales|platform)(\/|$)/.test(new URL(request.url).pathname)){
+   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security|sales|platform|staff)(\/|$)/.test(new URL(request.url).pathname)){
    const user=await current(request,env.DB).catch(()=>null);
    if(user)await logAudit(env.DB,user,new URL(request.url).pathname,request.method);
   }
