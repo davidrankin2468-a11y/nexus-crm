@@ -226,6 +226,32 @@ async function encryptedBackupDownload(data,passphrase){
  return true;
 }
 
+async function verifyLocalEncryptedBackup(file,passphrase){
+ if(!file||typeof file.text!=="function")throw Error("Choose an encrypted backup file.");
+ if(file.size<100||file.size>6000000)throw Error("Backup file must be between 100 bytes and 6 MB.");
+ const content=JSON.parse(await file.text());
+ if(content.format!=="nexus-crm-encrypted-backup-v1"||
+  content.encryption!=="AES-256-GCM"||content.kdf!=="PBKDF2-SHA256"||
+  !Number.isInteger(content.iterations)||content.iterations<100000||content.iterations>400000)
+  throw Error("This file is not a recognized Nexus CRM encrypted backup.");
+ const bytes=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+ const salt=bytes(content.salt),iv=bytes(content.iv),data=bytes(content.data);
+ if(salt.length!==16||iv.length!==12||data.length>2200000)throw Error("Encrypted backup is invalid or too large.");
+ const encoder=new TextEncoder();
+ const material=await crypto.subtle.importKey("raw",encoder.encode(passphrase),"PBKDF2",false,["deriveKey"]);
+ const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt,hash:"SHA-256",iterations:content.iterations},
+  material,{name:"AES-GCM",length:256},false,["decrypt"]);
+ let decoded;
+ try{decoded=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,data)}
+ catch{throw Error("Cannot decrypt this backup. Check your passphrase or file integrity.")}
+ const parsed=JSON.parse(new TextDecoder().decode(decoded));
+ if(parsed?.format!=="nexus-crm-business-export-v1"||parsed.schemaVersion!==1||!parsed.records||typeof parsed.records!=="object")
+  throw Error("Decrypted file is not a supported Nexus CRM business export.");
+ const keys=["customers","employees","jobs","estimates","invoices","appointments","payments"];
+ for(const k of keys){if(!Array.isArray(parsed.records[k]))throw Error("Backup is missing "+k+" records.")}
+ return {createdAt:parsed.createdAt,company:parsed.company,counts:Object.fromEntries(keys.map(k=>[k,parsed.records[k].length]))};
+}
+
 function managementContent(){
  const nav='<div class="actionrow">'+managementTabs.map(tab=>
   '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
@@ -252,13 +278,17 @@ function managementContent(){
     '<label>Repeat the backup passphrase<input name="confirmPassphrase" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label>'+
     '<button class="primary" type="submit">Download encrypted backup</button></form>'+
     '<p class="muted">The encrypted file contains business records only, not login credentials. Keep both the file and its separate passphrase safe. Automatic import from this file is not available yet; an assisted recovery process is still needed.</p>'):"";
+  const verifyPanel=panel("Verify an encrypted backup file",'<p>Check an exported file and passphrase entirely on this device. The file is not uploaded to Nexus CRM.</p>'+
+    '<form data-form="verify-backup"><label>Select backup file<input type="file" name="backupFile" required accept=".json,application/json"></label>'+
+    '<label>Backup passphrase<input type="password" name="backupPassphrase" required autocomplete="off"></label>'+
+    '<button class="primary" type="submit">Verify my backup</button></form>');
   return nav+
    panel("Private recovery snapshots",'<p>Cloudflare D1 Time Travel provides automatic point-in-time recovery for this production-storage database, with up to 30 days of history. The snapshots below are a second recovery convenience, stored inside the same D1 database—not an independent off-site backup.</p>'+
     '<div class="hint">This version does not require downloading ZIP files. R2 independent backup storage is not enabled; you should continue using test records until off-site backups and restore drills are completed.</div>'+
     '<form data-form="backup"><label>Snapshot label<input name="note" maxlength="100" value="Before CRM updates"></label>'+
     '<button class="primary" type="submit">Save recovery snapshot</button></form>')+
    panel("Saved snapshots · "+s.backupItems.length,table(["Created","Label","Records included","Action"],entries))+
-   details+downloadForm;
+   details+downloadForm+verifyPanel;
  }
  const x=s.securitySummary||{};
  const rows=s.auditEvents.map(e=>'<tr><td>'+safe(new Date(e.createdAt*1000).toLocaleString())+'</td><td>'+
@@ -440,6 +470,11 @@ document.addEventListener("submit",async e=>{
   if(type==="lead-status"){
    await request("/api/sales/leads/"+encodeURIComponent(data.id),"PATCH",{status:data.status});
    await refresh();notice("Inquiry status saved.");return;
+  }
+  if(type==="verify-backup"){
+   const verified=await verifyLocalEncryptedBackup(data.backupFile,data.backupPassphrase);
+   notice("Encrypted backup verified for "+verified.company+": "+describeBackupCounts(verified.counts)+". File was checked locally, not uploaded.");
+   f.reset();return;
   }
   if(type==="download-backup"){
    if(data.backupPassphrase!==data.confirmPassphrase)throw Error("The backup passphrases do not match.");
