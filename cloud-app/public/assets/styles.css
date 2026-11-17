@@ -48,3 +48,60 @@ button,a,summary{-webkit-tap-highlight-color:rgba(173,246,139,.18);touch-action:
  .actionrow button{min-height:44px}
  .tablewrap{border:1px solid var(--border);border-radius:9px}
 }
+
+
+/* Nexus CRM 3.1: streamlined phone navigation and invitation console */
+:where(.panel,.card,.layout,.content,.gridform,.actionrow){min-width:0}
+.panel{overflow-wrap:break-word}
+.panel :is(input,textarea,select){max-width:100%}
+.panel input[readonly]{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px;word-break:break-all}
+.tablewrap{border:1px solid var(--border);border-radius:10px;overscroll-behavior-inline:contain}
+.table-scroll-hint{display:none}
+.tablewrap:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+button:focus-visible,a:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+button{min-height:42px}
+.actionrow>button{min-height:44px}
+.auth .actionrow{align-items:stretch}
+.auth .actionrow button{flex:1}
+@media(max-width:780px){
+ .masthead{gap:12px;padding-block:14px}
+ .head-right{width:100%;display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-start}
+ .head-right a{min-height:40px;display:inline-flex;align-items:center}
+ .sidebar{padding:12px 13px 15px}
+ .sidebar .tenant{font-size:14px;font-weight:750;padding:3px 4px 11px}
+ .sidebar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+ .sidebar .tenant{grid-column:1/-1}
+ .sidebar .nav{width:100%;min-width:0;min-height:46px;margin:0;padding:8px 5px;
+  white-space:normal;line-height:1.25;font-size:12px;text-align:center;word-break:normal}
+ .content{padding-block:19px}
+ .content-heading{align-items:center;gap:10px}
+ .content-heading h1{font-size:25px}
+ .content-heading button{min-height:44px}
+ .cards{gap:9px;margin-block:17px}
+ .card,.panel{padding:17px 14px}
+ .card strong{font-size:24px}
+ .panel h2{font-size:19px}
+ .gridform{gap:0}
+ .gridform label{margin-top:13px}
+ label{font-size:14px}
+ input,textarea,select{min-height:46px;font-size:16px}
+ .actionrow{align-items:stretch}
+ .actionrow button{min-height:46px}
+ .table-scroll-hint{display:block;margin:12px 0 6px;color:var(--muted);font-size:12px}
+ .tablewrap{max-width:100%;-webkit-overflow-scrolling:touch}
+ table{min-width:560px}
+ td,th{padding:12px 9px;vertical-align:top}
+ .auth{margin:25px auto 50px;padding:22px 18px}
+ footer{padding-block:15px}
+}
+@media(max-width:430px){
+ .masthead{padding-inline:13px}
+ .content{padding-inline:13px}
+ .sidebar{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .sidebar .nav{font-size:11.5px}
+ .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .card strong{font-size:20px}
+ .content-heading button{font-size:13px}
+ .actionrow>button{flex:1}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
