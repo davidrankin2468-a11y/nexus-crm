@@ -4,7 +4,16 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:""};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:""};
+// The invitation token travels only in the URL fragment (not HTTP request/log).
+// Remove it from the address bar immediately and keep it only in memory until used.
+try{
+ const fragment=new URLSearchParams(location.hash.slice(1)).get("invite")||"";
+ if(/^[a-f0-9]{64}$/i.test(fragment)){
+  s.pendingInviteToken=fragment.toLowerCase();
+  history.replaceState(null,"",location.pathname+location.search);
+ }
+}catch(e){/* Standard login remains available if URL hash is unsupported. */}
 async function request(path,method="GET",data=null){
  const headers={"Accept":"application/json"};
  if(data!==null)headers["Content-Type"]="application/json";
@@ -30,7 +39,30 @@ function authScreen(mode){
  '<label>Password<input name="password" type="password" required '+(setup?'minlength="12" autocomplete="new-password"':'autocomplete="current-password"')+'></label>'+
  '<div class="hint">'+(setup?"The setup code is valid for one registration. Choose a strong unique password and keep it private.":"Your session is protected by a secure HTTP-only cookie. Never share your password.")+'</div>'+
  '<button class="primary" type="submit">'+(setup?"Create administrator account":"Sign in")+'</button></form>'+
- '<p class="muted" style="font-size:12px">Security alpha: invite accounts, MFA, and comprehensive backups are not available yet. Use test data only.</p></div>';
+ '<p class="muted" style="font-size:12px">Security alpha: company invitations are available for controlled testing. MFA, verified email delivery and complete production backups are not ready. Use fictional records only.</p></div>';
+}
+
+async function invitationScreen(){
+ if(!s.pendingInviteToken){authScreen("login");return}
+ s.account=null;s.csrf="";
+ try{
+  const invite=await request("/api/invitations/preview","POST",{token:s.pendingInviteToken});
+  $("mount").innerHTML='<div class="auth"><h1>Join your company on Nexus CRM</h1>'+
+   '<p>This is a one-time invitation for a separate company workspace. Your login will only access that company.</p>'+
+   '<div class="hint"><strong>Company:</strong> '+safe(invite.companyName)+
+   '<p><strong>Owner email:</strong> '+safe(invite.email)+'</p>'+
+   '<p><strong>Invitation expires:</strong> '+safe(new Date(invite.expiresAt*1000).toLocaleString())+'</p></div>'+
+   '<form data-form="accept-invite">'+
+   '<label>Create a password (14–128 characters)<input type="password" name="password" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
+   '<label>Confirm password<input type="password" name="confirmPassword" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
+   '<div class="actionrow"><button class="primary" type="submit">Activate invited test company</button>'+
+   '<button type="button" data-action="cancel-invite">Back to sign in</button></div></form>'+
+   '<p class="muted">Invitation-only pilot. Email delivery, email verification and MFA are not yet enabled. Use fictional records until the production security review is complete.</p></div>';
+ }catch(e){
+  s.pendingInviteToken="";
+  authScreen("login");
+  notice("This company invitation is invalid, expired or already used. Ask the Nexus owner for a new link.");
+ }
 }
 function statusBadge(v){return '<span class="tag">'+safe(v)+'</span>'}
 function table(headers,rows){
@@ -161,7 +193,7 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
-const managementTabs=["Backups","Security","Sales Leads"];
+const managementTabs=["Backups","Security","Sales Leads","Companies"];
 function describeBackupCounts(counts){
  const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
  return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
@@ -252,11 +284,47 @@ async function verifyLocalEncryptedBackup(file,passphrase){
  return {createdAt:parsed.createdAt,company:parsed.company,counts:Object.fromEntries(keys.map(k=>[k,parsed.records[k].length]))};
 }
 
+function companyAccessContent(){
+ if(!s.account?.isPlatformOperator)return panel("Access denied","<p>Company enrollment is managed by the Nexus platform operator only.</p>");
+ if(s.onboardingError)return panel("Company onboarding needs attention",'<p>'+safe(s.onboardingError)+'</p><p>Reload the data to try again. Existing company records are unaffected.</p>');
+ const link=s.newInvite?location.origin+"/#invite="+s.newInvite.token:"";
+ const oneTime=s.newInvite?panel("One-time company invitation — copy this now",
+  '<p><strong>'+safe(s.newInvite.companyName)+'</strong> · '+safe(s.newInvite.email)+'</p>'+
+  '<p>Copy and privately share this link with the intended owner. It expires in 3 days and works only once. Nexus does not email it automatically.</p>'+
+  '<label>Invitation link<input type="text" readonly autocomplete="off" aria-label="New company invitation link" value="'+safe(link)+'"></label>'+
+  '<div class="actionrow"><button class="primary" type="button" data-action="copy-company-invite">Copy invitation link</button>'+
+  '<button type="button" data-action="clear-company-invite">Hide link</button></div>'+
+  '<p class="muted">Keep this link private. Anyone holding it could activate the invited account until it expires or is revoked.</p>'):"";
+ const invites=s.companyInvites.map(x=>{
+  const state=x.redeemedAt?"Accepted":x.revokedAt?"Revoked":x.expiresAt<=Math.floor(Date.now()/1000)?"Expired":"Pending";
+  const cancel=state==="Pending"?'<form data-form="revoke-company-invite" class="actionrow">'+
+   '<input type="hidden" name="id" value="'+safe(x.id)+'">'+
+   '<label>Owner password<input name="password" type="password" autocomplete="current-password" required></label>'+
+   '<button type="submit">Revoke</button></form>':"";
+  return '<tr><td>'+safe(x.companyName)+'</td><td>'+safe(x.email)+'</td><td>'+safe(state)+'</td>'+
+   '<td>'+safe(new Date(x.expiresAt*1000).toLocaleDateString())+'</td><td>'+cancel+'</td></tr>';
+ });
+ const companies=s.companies.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.ownerEmail||"No owner")+'</td>'+
+  '<td>'+safe(x.userCount)+'</td><td>'+safe(x.customerCount)+'</td><td>'+safe(x.jobCount)+'</td></tr>');
+ return panel("Invite a separate company (pilot testing only)",
+  '<p>Create a separate company workspace and its first owner account. Each invitation is single-use and expires after 3 days. The new account must have an email not already used on Nexus CRM.</p>'+
+  '<form data-form="company-invite" class="gridform">'+
+  input("companyName","New company name","","text",true)+
+  input("email","Company owner email","","email",true)+
+  '<label>Your current Nexus CRM password<input name="password" type="password" autocomplete="current-password" required></label>'+
+  '<div class="actionrow"><button class="primary" type="submit">Create one-time company invitation</button></div></form>'+
+  '<p class="muted">There is no public sign-up, email delivery, billing, or production approval yet. Do not invite real businesses to upload sensitive information.</p>')+
+  oneTime+
+  panel("Company invitations",table(["Company","Invited owner","Status","Expires","Action"],invites))+
+  panel("Separate company workspaces",table(["Company","Owner account","Users","Customers","Jobs"],companies));
+}
+
 function managementContent(){
- const nav='<div class="actionrow">'+managementTabs.filter(tab=>tab!=="Sales Leads"||s.account?.isPlatformOperator).map(tab=>
+ const nav='<div class="actionrow">'+managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator).map(tab=>
   '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
  if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
+ if(s.managementView==="Companies")return nav+companyAccessContent();
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -411,6 +479,10 @@ async function refresh(){
     const lead=await request("/api/sales/leads");
     s.salesLeads=lead.items;s.salesTotal=lead.total;s.salesNew=lead.newCount;s.salesError="";
    }catch(e){s.salesError=e?.message||"Unable to load inquiries";}
+   try{
+    const [invitations,companies]=await Promise.all([request("/api/platform/invitations"),request("/api/platform/companies")]);
+    s.companyInvites=invitations.items;s.companies=companies.items;s.onboardingError="";
+   }catch(e){s.onboardingError=e?.message||"Unable to load company onboarding";}
   }
  }
  draw();
@@ -418,6 +490,7 @@ async function refresh(){
 async function start(){
  try{
   const status=await request("/api/status");
+  if(s.pendingInviteToken){await invitationScreen();return}
   try{await refresh();notice("")}
   catch(e){if((e.message||"").includes("sign in"))authScreen(status.configured?"login":"setup");
   else if(e.message==="Please sign in")authScreen(status.configured?"login":"setup");
@@ -429,7 +502,16 @@ document.addEventListener("click",async e=>{
  if(b.dataset.page){s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
- if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.action==="copy-company-invite"){
+  if(!s.newInvite)return;
+  const link=location.origin+"/#invite="+s.newInvite.token;
+  try{await navigator.clipboard.writeText(link);notice("Invitation link copied. Share it privately with the invited owner.")}
+  catch(e){notice("Select the invitation link above and copy it manually.");}
+  return;
+ }
+ if(b.dataset.action==="clear-company-invite"){s.newInvite=null;draw();notice("One-time invitation link hidden.");return}
+ if(b.dataset.action==="cancel-invite"){s.pendingInviteToken="";authScreen("login");notice("");return}
  if(b.dataset.exportLeads){exportLeadsCsv();return}
  if(b.dataset.deleteLead){
   if(!confirm("Permanently delete this early-access inquiry? This cannot be undone."))return;
@@ -458,6 +540,21 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="accept-invite"){
+   if(data.password!==data.confirmPassword)throw Error("Passwords do not match.");
+   if(String(data.password).length<14)throw Error("Choose a password of at least 14 characters.");
+   await request("/api/invitations/accept","POST",{token:s.pendingInviteToken,password:data.password});
+   s.pendingInviteToken="";await refresh();notice("New test company activated. Its records are separate from other companies.");return;
+  }
+  if(type==="company-invite"){
+   const result=await request("/api/platform/invitations","POST",data);
+   await refresh();s.managementView="Companies";s.newInvite=result;draw();
+   notice("One-time invitation created. Copy it privately now; the code will not be shown again after you leave.");return;
+  }
+  if(type==="revoke-company-invite"){
+   await request("/api/platform/invitations/"+encodeURIComponent(data.id)+"/revoke","POST",{password:data.password});
+   s.newInvite=null;await refresh();notice("Invitation revoked.");return;
+  }
   if(type==="login"||type==="setup"){await request("/api/"+type,"POST",data);await refresh();notice(type==="setup"?"Administrator created and signed in.":"Signed in successfully.");return}
   if(type==="customer"){
    const url=s.editingCustomer?"/api/customers/"+encodeURIComponent(s.editingCustomer):"/api/customers";
