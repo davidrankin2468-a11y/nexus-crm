@@ -913,6 +913,16 @@ async function handler(request,env){
   if(result.meta?.changes!==1)return error("Active staff invitation not found",404);
   return response({ok:true});
  }
+ if(path==="/api/license/plan-matrix"&&method==="GET"){
+  // Staging-only, read-only: compare published plan entitlements without
+  // changing the signed-in company's license or trusting a tenant query param.
+  if(!new URL(request.url).hostname.startsWith("nexus-crm-license-staging."))return error("Not found",404);
+  if(user.role!=="owner")return error("Owner access required",403);
+  const plans=await all(db,"SELECT code,name,monthly_price_cents AS monthlyPriceCents,max_users AS maxUsers FROM license_plans ORDER BY monthly_price_cents");
+  const rows=await all(db,"SELECT plan_code,feature_key,enabled FROM license_entitlements");
+  const features=["crm","projects","advanced_reports","automation","nexus_ai"];
+  return response({mode:"staging-read-only",plans:plans.map(p=>({code:p.code,name:p.name,monthlyPriceCents:p.monthlyPriceCents,maxUsers:p.maxUsers,features:Object.fromEntries(features.map(k=>[k,rows.some(r=>r.plan_code===p.code&&r.feature_key===k&&Number(r.enabled)===1)]))})),tenantScope:"authenticated-session",noLicenseChanges:true});
+ }
  if((path==="/api/license/check"||path==="/api/license/require")&&method==="GET"){
   // Staging-only: require performs genuine server-side denial on a safe, read-only
   // test endpoint. Existing business routes remain unchanged until reviewed.
