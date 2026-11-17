@@ -1,6 +1,6 @@
 // Nexus CRM cloud alpha API. Deployed with Cloudflare Pages Functions; no secrets in source.
 const ITERS=100000, WEEK=604800, STATUSES=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const H={"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer"};
+const H={"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer","X-Frame-Options":"DENY","Strict-Transport-Security":"max-age=31536000","Cross-Origin-Resource-Policy":"same-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(), payment=()","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"};
 const response=(data,status=200,extra={})=>new Response(JSON.stringify(data),{status,headers:{...H,...extra}});
 const error=(message,status=400)=>response({error:message},status);
 const hex=bytes=>Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
