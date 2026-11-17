@@ -265,7 +265,7 @@ async function handler(request,env){
  if(!path.startsWith("/api/"))return error("Not found",404);
  if(!["GET","POST","PATCH"].includes(method))return error("Method not allowed",405);
  if(method!=="GET"&&request.headers.get("Origin")!==new URL(request.url).origin)return error("Origin not allowed",403);
- if(path==="/api/health"&&method==="GET")return response({ok:!!(await first(db,"SELECT 1 AS ok"))?.ok,version:"3.4-alpha"});
+ if(path==="/api/health"&&method==="GET")return response({ok:!!(await first(db,"SELECT 1 AS ok"))?.ok,version:"3.4-alpha",authenticatorAvailable:!!env.MFA_MASTER_KEY});
  if(path==="/api/status"&&method==="GET"){
   const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"3.4-alpha"});
  }
