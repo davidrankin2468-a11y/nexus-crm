@@ -1,3 +1,34 @@
+# Nexus CRM 3.1 — Mobile and performance optimization
+
+**Deployed:** https://nexus-crm-secure.pages.dev  
+**Upgrade scope:** Existing five-tab cloud alpha, including Management → Companies. No new subscriptions or paid services.
+
+## Improvements
+
+- Core CRM, Finance, owner recovery/security, platform sales inbox, and company onboarding data load **concurrently** after session authentication rather than in a long sequence. Core failures still block the app, but unrelated Finance/Management/Sales failures show their own errors instead of blocking another area.
+- Outdated overlapping refreshes are ignored to avoid displaying stale company/session data.
+- The five main tabs are arranged into a mobile-friendly grid at small screen widths, with minimum 46-pixel touch targets in the tested viewport.
+- All tables have horizontally scrollable, keyboard-focusable containers and mobile swipe guidance.
+- Invitation activation checks for an existing signed-in session first and warns users to open the invitation in a separate private/incognito session, avoiding accidental switching of the platform operator's session.
+- Mobile form fields use 16px text to avoid Safari automatic zoom, with larger touch controls and compact panels.
+- More helpful connection-error text appears when the browser is offline.
+- The original account/company ID and database data were left intact; the existing invitation-only pilot rules remain unchanged.
+
+## Verification
+
+- GitHub pre-upgrade branch: `backup-before-multicompany-3-1-optimization`.
+- Javascript syntax/runtime smoke checks passed for company management views and the parallel refresh code.
+- Live Cloudflare Browser Rendering on a **390px** mobile viewport passed all eight checks: five main tabs, minimum 44px tap targets (measured 46px for each), company invitation form, copy-link control, accessible scrollable tables, no horizontal overflow, non-operator denial, and intact five-tab navigation.
+- A follow-up 320px browser verification hit a Cloudflare rate limit and could **not** be confirmed in that run.
+- A temporary QA file was removed from the public asset folder after testing.
+- No actual customer invitation was created and no two-account authenticated tenant-isolation test was performed during optimization; complete those before enabling real customer data.
+
+## Pilot limitations
+
+Still **not commercially production-ready**. Do not onboard actual companies with sensitive business data until MFA, email verification/account recovery, multi-company penetration/isolation testing, independent backups/restore drills, and legal/billing work are completed.
+
+---
+
 # Nexus CRM 3.0 — Invitation-only multi-company pilot
 
 **Working private alpha:** https://nexus-crm-secure.pages.dev  
