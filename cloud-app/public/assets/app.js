@@ -253,10 +253,10 @@ async function verifyLocalEncryptedBackup(file,passphrase){
 }
 
 function managementContent(){
- const nav='<div class="actionrow">'+managementTabs.map(tab=>
+ const nav='<div class="actionrow">'+managementTabs.filter(tab=>tab!=="Sales Leads"||s.account?.isPlatformOperator).map(tab=>
   '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
- if(s.managementView==="Sales Leads")return nav+salesLeadsContent();
+ if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -401,10 +401,12 @@ async function refresh(){
    const [b,security,activity]=await Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")]);
    s.backupItems=b.items;s.securitySummary=security;s.auditEvents=activity.items;s.recoveryError="";
   }catch(e){s.recoveryError=e?.message||"Unable to load recovery controls";}
-  try{
-   const lead=await request("/api/sales/leads");
-   s.salesLeads=lead.items;s.salesTotal=lead.total;s.salesNew=lead.newCount;s.salesError="";
-  }catch(e){s.salesError=e?.message||"Unable to load inquiries";}
+  if(s.account?.isPlatformOperator){
+   try{
+    const lead=await request("/api/sales/leads");
+    s.salesLeads=lead.items;s.salesTotal=lead.total;s.salesNew=lead.newCount;s.salesError="";
+   }catch(e){s.salesError=e?.message||"Unable to load inquiries";}
+  }
  }
  draw();
 }
