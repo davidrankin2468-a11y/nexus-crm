@@ -138,6 +138,11 @@ function table(headers,rows){
  '</tbody></table></div>';
 }
 function panel(title,contents){return '<section class="panel"><h2>'+safe(title)+'</h2>'+contents+'</section>'}
+function disclosurePanel(title,contents,open=false){
+ return '<details class="panel editor-panel disclosure-panel"'+(open?' open':'')+'>'+
+ '<summary><span>'+safe(title)+'</span><span class="editor-caret" aria-hidden="true"></span></summary>'+
+ '<div class="editor-body">'+contents+'</div></details>';
+}
 function editorPanel(title,contents,open=false){
  if(s.account?.role==="employee")return "";
  return '<details class="panel editor-panel"'+(open?' open':'')+'>'+
@@ -290,12 +295,12 @@ function salesLeadsContent(){
   '<td><form data-form="lead-status" class="actionrow"><input name="id" type="hidden" value="'+safe(x.id)+'">'+
   '<select name="status" aria-label="Lead status">'+statusList.map(v=>'<option value="'+v+'" '+(v===x.status?"selected":"")+'>'+v+'</option>').join("")+'</select>'+
   '<button type="submit">Save</button></form><button type="button" data-delete-lead="'+safe(x.id)+'">Delete inquiry</button></td></tr>');
- return summary+panel("Early-access inquiries",
- '<p>These requests come from the separate public Nexus CRM website. Only the owner can see their details here. A submitted inquiry is not a CRM account or a sale.</p>'+
+ return summary+panel("Business inquiries",
+ '<p class="panel-note">Review requests and update follow-up status. These are inquiries, not customer accounts.</p>'+
 
  '<div class="actionrow"><button type="button" data-export-leads="true">Export inquiries CSV</button></div>'+
  table(["Business / email","Industry","Requested features","Received","Status"],rows))+
- '<p class="muted">Clicking an email address opens your own email application. No automated outreach or marketing emails are sent by Nexus CRM.</p>';
+ '<p class="panel-note">Email links open your mail app; messages are not sent automatically.</p>';
 }
 function exportLeadsCsv(){
  const fields=["email","company","industry","interestNote","status","createdAt"];
@@ -385,18 +390,18 @@ function companyAccessContent(){
  });
  const companies=s.companies.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.ownerEmail||"No owner")+'</td>'+
   '<td>'+safe(x.userCount)+'</td><td>'+safe(x.customerCount)+'</td><td>'+safe(x.jobCount)+'</td></tr>');
- return panel("Invite a separate company (pilot testing only)",
-  '<p>Create a separate company workspace and its first owner account. Each invitation is single-use and expires after 3 days. The new account must have an email not already used on Nexus CRM.</p>'+
-  '<div class="hint"><strong>Pilot only.</strong> Send invitations to test accounts you control. Email verification and MFA are not yet enabled.</div>'+
+ return editorPanel("Invite test company",
+  '<p>Create a new workspace and owner sign-in. Invitations expire after three days and can be used once.</p>'+
+  '<div class="hint">Test accounts only. Email verification and MFA are not enabled.</div>'+
   '<form data-form="company-invite" class="gridform">'+
   input("companyName","New company name","","text",true)+
   input("email","Company owner email","","email",true)+
   '<label>Your current Nexus CRM password<input name="password" type="password" autocomplete="current-password" required></label>'+
   '<div class="actionrow"><button class="primary" type="submit">Create one-time company invitation</button></div></form>'+
-  '<p class="muted">There is no public sign-up, email delivery, billing, or production approval yet. Do not invite real businesses to upload sensitive information.</p>')+
+  '<p class="panel-note">Send the invitation privately. Do not onboard actual businesses yet.</p>')+
   oneTime+
-  panel("Company invitations",table(["Company","Invited owner","Status","Expires","Action"],invites))+
-  panel("Separate company workspaces",table(["Company","Owner account","Users","Customers","Jobs"],companies));
+  panel("Company invitations · "+s.companyInvites.length,table(["Company","Invited owner","Status","Expires","Action"],invites))+
+  panel("Companies · "+s.companies.length,table(["Company","Owner account","Users","Customers","Jobs"],companies));
 }
 
 function accountSecurityContent(){
@@ -414,8 +419,7 @@ function accountSecurityContent(){
   '<label>Confirm password<input name="confirmPassword" type="password" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
   '<button type="submit" class="primary">Change password</button></form>')+
   panel("Offline recovery codes",
-  '<p>Generate eight single-use recovery codes. This is a free pilot recovery option that works without email. '+
-  'Existing codes stop working when you generate new ones. This does not provide MFA.</p>'+
+  '<p>Generate eight single-use codes for password recovery. New codes invalidate old ones; this is not MFA.</p>'+
   '<form data-form="generate-recovery"><label>Confirm current password<input name="password" type="password" required autocomplete="current-password"></label>'+
   '<button type="submit" class="primary">Generate new recovery codes</button></form>')+
   issued;
@@ -451,19 +455,17 @@ function teamAccessContent(){
    '<button type="submit">Revoke</button></form>':"";
   return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(status)+'</td><td>'+cancel+'</td></tr>';
  });
- return panel("Invite a test team member",
-  '<p>Create a separate sign-in within your existing company. <strong>Admin</strong> can update business and Finance records; '+
-  '<strong>Employee</strong> can only read the customer, jobs, staff directory and schedule. '+
-  'Neither has company-owner security or backup access.</p>'+
-  '<div class="hint">Use an email address you control for pilot testing. Do not send invitations to real employees until email verification, MFA and security tests are completed.</div>'+
+ return editorPanel("Invite team member",
+  '<p><strong>Admin</strong> can edit operations and Finance. <strong>Employee</strong> can view operations only.</p>'+
+  '<div class="hint">Pilot testing only: use an address you control. Email verification and MFA are not enabled.</div>'+
   '<form data-form="staff-invite" class="gridform">'+
   input("email","Staff email","","email",true)+
   '<label>Staff role<select name="role" required><option value="employee">Employee · read-only operations</option>'+
   '<option value="admin">Admin · edit operations and Finance</option></select></label>'+
   '<label>Confirm your Nexus CRM password<input name="password" type="password" required autocomplete="current-password"></label>'+
   '<div class="actionrow"><button type="submit" class="primary">Create staff invitation</button></div></form>')+
-  minted+panel("Company accounts and access",table(["Email","Role","Status","Created","Access"],users))+
-  panel("Staff invitations",table(["Email","Role","Status","Action"],invites));
+  minted+panel("Team accounts · "+s.staffUsers.length,table(["Email","Role","Status","Created","Access"],users))+
+  panel("Invitations · "+s.staffInvites.length,table(["Email","Role","Status","Action"],invites));
 }
 
 function managementContent(){
@@ -493,15 +495,15 @@ function managementContent(){
     '<label>Repeat the backup passphrase<input name="confirmPassphrase" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label>'+
     '<button class="primary" type="submit">Download encrypted backup</button></form>'+
     '<p class="muted">The encrypted file contains business records only, not login credentials. Keep both the file and its separate passphrase safe. Automatic import from this file is not available yet; an assisted recovery process is still needed.</p>'):"";
-  const verifyPanel=panel("Verify an encrypted backup file",'<p>Check an exported file and passphrase entirely on this device. The file is not uploaded to Nexus CRM.</p>'+
+  const verifyPanel=disclosurePanel("Verify encrypted backup",'<p>Check an exported file and passphrase entirely on this device. The file is not uploaded to Nexus CRM.</p>'+
     '<form data-form="verify-backup"><label>Select backup file<input type="file" name="backupFile" required accept=".json,application/json"></label>'+
     '<label>Backup passphrase<input type="password" name="backupPassphrase" required autocomplete="off"></label>'+
     '<button class="primary" type="submit">Verify my backup</button></form>');
   return nav+
-   panel("Private recovery snapshots",'<p>Cloudflare D1 Time Travel provides automatic point-in-time recovery for this production-storage database, with up to 30 days of history. The snapshots below are a second recovery convenience, stored inside the same D1 database—not an independent off-site backup.</p>'+
-    '<div class="hint">This version does not require downloading ZIP files. R2 independent backup storage is not enabled; you should continue using test records until off-site backups and restore drills are completed.</div>'+
+   panel("Backup & recovery",'<p class="panel-note">Snapshots are stored within the same database. Independent off-site backups are not configured yet.</p>')+
+   editorPanel("Create recovery snapshot",
     '<form data-form="backup"><label>Snapshot label<input name="note" maxlength="100" value="Before CRM updates"></label>'+
-    '<button class="primary" type="submit">Save recovery snapshot</button></form>')+
+    '<button class="primary" type="submit">Save snapshot</button></form>')+
    panel("Saved snapshots · "+s.backupItems.length,table(["Created","Label","Records included","Action"],entries))+
    details+downloadForm+verifyPanel;
  }
@@ -511,15 +513,15 @@ function managementContent(){
  return nav+panel("Account security",'<p><strong>Company:</strong> '+safe(s.account?.company||"")+'</p>'+
     '<p><strong>Owner:</strong> '+safe(s.account?.email||"")+'</p>'+
     '<p><strong>Active sessions:</strong> '+safe(x.activeSessions??"—")+'</p>'+
-    '<p><strong>Multifactor authentication:</strong> Not enabled yet.</p>'+
+    '<p><strong>Multifactor authentication:</strong> Not configured.</p>'+
     '<p><strong>Cloud snapshots:</strong> '+safe(x.backups??"—")+'</p>'+
     '<p><strong>Independent off-site backup:</strong> Not configured.</p>'+
     '<div class="hint">Passwords, session cookies, and login tokens are excluded from recovery snapshots. Keep using fictional records until security review, MFA, and off-site backup testing are complete.</div>')+
     accountSecurityContent()+
-    panel("Sign out other devices",'<p>Revoke other active Nexus CRM sign-in sessions. This device stays signed in.</p>'+
+    disclosurePanel("Sign out other devices",'<p>Revoke other active Nexus CRM sign-in sessions. This device stays signed in.</p>'+
     '<form data-form="revoke-sessions"><label>Account password<input name="password" type="password" required autocomplete="current-password"></label>'+
     '<button class="primary" type="submit">Sign out other devices</button></form>')+
-    panel("Recent activity",table(["When","Area","Action"],rows));
+    disclosurePanel("Recent activity",table(["When","Area","Action"],rows));
 }
 
 function currentTab(){
