@@ -1,4 +1,6 @@
-import {evaluateLicense,canExport,canAddSeat} from "./license-engine.js";
+import {readFile} from "node:fs/promises";
+const source=await readFile(new URL("./license-engine.js",import.meta.url),"utf8");
+const {evaluateLicense,canExport,canAddSeat,authorizeFeature}=await import("data:text/javascript;base64,"+Buffer.from(source).toString("base64"));
 import assert from "node:assert/strict";
 const t=2000000000;
 const license={status:"active",period_start:t-100,period_end:t+100,grace_until:null};
@@ -15,4 +17,9 @@ assert.equal(canExport({license:{export_until:t-1},now:t}),false);
 assert.equal(canAddSeat({licensed:3,used:3}),false);
 assert.equal(canAddSeat({licensed:3,used:2}),true);
 assert.equal(canAddSeat({licensed:null,used:100}),true);
-console.log("11 license engine assertions passed");
+assert.equal(evaluateLicense({license:{...license,period_end:null},entitlements:features,feature:"crm",now:t}).allowed,false);
+assert.equal(canExport({license:{export_until:null},now:t}),false);
+const db={prepare(sql){return {bind(value){return {async first(){return {...license,plan_code:"starter"}},async all(){return {results:features}}}}}}};
+assert.equal((await authorizeFeature(db,{tenant_id:"tenant-a",user_id:"user-a"},"crm",t)).allowed,true);
+assert.equal((await authorizeFeature(db,{tenant_id:"tenant-a",id:"legacy-id"},"crm",t)).allowed,false);
+console.log("15 license engine assertions passed");
