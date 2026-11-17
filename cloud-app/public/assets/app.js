@@ -491,10 +491,13 @@ async function refresh(){
  const managementLoad=owner?Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")])
   .then(([backups,summary,activity])=>({backups,summary,activity})):Promise.resolve(null);
  const platform=owner&&s.account.isPlatformOperator;
- const platformLoad=platform?Promise.all([
-  request("/api/sales/leads"),request("/api/platform/invitations"),request("/api/platform/companies")
- ]).then(([leads,invitations,companies])=>({leads,invitations,companies})):Promise.resolve(null);
- const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,platformLoad]);
+ // Lead inbox and company controls must fail independently; the public
+ // interest database should never block managing test company invitations.
+ const leadsLoad=platform?request("/api/sales/leads"):Promise.resolve(null);
+ const companiesLoad=platform?Promise.all([
+  request("/api/platform/invitations"),request("/api/platform/companies")
+ ]).then(([invitations,companies])=>({invitations,companies})):Promise.resolve(null);
+ const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad]);
  if(seq!==refreshNumber)return;
  if(outcomes[0].status==="rejected")throw outcomes[0].reason;
  const core=outcomes[0].value;
@@ -512,15 +515,13 @@ async function refresh(){
    s.auditEvents=management.value.activity.items;s.recoveryError="";
   }else{s.recoveryError=management.reason?.message||"Unable to load recovery controls";}
   if(platform){
-   const sales=outcomes[3];
+   const sales=outcomes[3],companyData=outcomes[4];
    if(sales.status==="fulfilled"){
-    s.salesLeads=sales.value.leads.items;s.salesTotal=sales.value.leads.total;s.salesNew=sales.value.leads.newCount;
-    s.companyInvites=sales.value.invitations.items;s.companies=sales.value.companies.items;
-    s.onboardingError="";s.salesError="";
-   }else{
-    s.onboardingError=sales.reason?.message||"Unable to load company onboarding";
-    s.salesError=s.onboardingError;
-   }
+    s.salesLeads=sales.value.items;s.salesTotal=sales.value.total;s.salesNew=sales.value.newCount;s.salesError="";
+   }else{s.salesError=sales.reason?.message||"Unable to load sales inquiries";}
+   if(companyData.status==="fulfilled"){
+    s.companyInvites=companyData.value.invitations.items;s.companies=companyData.value.companies.items;s.onboardingError="";
+   }else{s.onboardingError=companyData.reason?.message||"Unable to load company onboarding";}
   }
  }
  draw();
