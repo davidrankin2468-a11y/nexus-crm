@@ -209,9 +209,9 @@ async function handler(request,env){
  if(!path.startsWith("/api/"))return error("Not found",404);
  if(!["GET","POST","PATCH"].includes(method))return error("Method not allowed",405);
  if(method!=="GET"&&request.headers.get("Origin")!==new URL(request.url).origin)return error("Origin not allowed",403);
- if(path==="/api/health"&&method==="GET")return response({ok:!!(await first(db,"SELECT 1 AS ok"))?.ok,version:"3.0-alpha"});
+ if(path==="/api/health"&&method==="GET")return response({ok:!!(await first(db,"SELECT 1 AS ok"))?.ok,version:"3.1-alpha"});
  if(path==="/api/status"&&method==="GET"){
-  const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"3.0-alpha"});
+  const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"3.1-alpha"});
  }
  if(path==="/api/setup"&&method==="POST"){
   const v=await readJson(request),code=clean(v.setupCode,150),companyName=clean(v.companyName,150),email=clean(v.email,254).toLowerCase(),password=String(v.password||"");
