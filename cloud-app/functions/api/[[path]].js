@@ -913,6 +913,21 @@ async function handler(request,env){
   if(result.meta?.changes!==1)return error("Active staff invitation not found",404);
   return response({ok:true});
  }
+ if(path==="/api/security/tenant-isolation-check"&&method==="GET"){
+  // Read-only staging diagnostic. No cross-tenant records or identifiers leave the server.
+  // A single-tenant environment cannot prove cross-tenant isolation.
+  if(!new URL(request.url).hostname.startsWith("nexus-crm-license-staging."))return error("Not found",404);
+  if(user.role!=="owner")return error("Owner access required",403);
+  const other=await first(db,"SELECT COUNT(*) AS count FROM tenants WHERE id<>?",user.tenant_id);
+  const tables=["customers","jobs","employees","appointments","estimates","invoices","payments"];
+  const checks=[];
+  for(const table of tables){
+   const own=await first(db,"SELECT COUNT(*) AS count FROM "+table+" WHERE tenant_id=?",user.tenant_id);
+   const foreign=await first(db,"SELECT COUNT(*) AS count FROM "+table+" WHERE tenant_id<>?",user.tenant_id);
+   checks.push({table,sessionScopedQuery:true,ownCount:Number(own?.count||0),otherTenantRowsExist:Number(foreign?.count||0)>0});
+  }
+  return response({mode:"staging-read-only",authenticatedTenantFromSession:true,otherTenantsPresent:Number(other?.count||0)>0,checks,conclusion:Number(other?.count||0)>0?"SCOPED_QUERY_DIAGNOSTIC_ONLY":"INCONCLUSIVE_SINGLE_TENANT",note:"This checks scoped SQL counts; it does not substitute for authenticated cross-company API attack tests."});
+ }
  if(path==="/api/license/plan-matrix"&&method==="GET"){
   // Staging-only, read-only: compare published plan entitlements without
   // changing the signed-in company's license or trusting a tenant query param.
