@@ -913,6 +913,17 @@ async function handler(request,env){
   if(result.meta?.changes!==1)return error("Active staff invitation not found",404);
   return response({ok:true});
  }
+ if(path==="/api/license/me"&&method==="GET"){
+  // Read-only tenant-scoped license view; does not activate enforcement on legacy pilot accounts.
+  const license=await first(db,`SELECT l.id,l.plan_code AS planCode,l.status,l.period_start AS periodStart,
+   l.period_end AS periodEnd,l.grace_until AS graceUntil,l.export_until AS exportUntil,
+   p.max_users AS maxUsers,p.storage_bytes AS storageBytes
+   FROM tenant_licenses l JOIN license_plans p ON p.code=l.plan_code
+   WHERE l.tenant_id=? ORDER BY l.created_at DESC LIMIT 1`,user.tenant_id);
+  if(!license)return response({configured:false,license:null,mode:"pilot-not-enforced"});
+  const entitlements=await all(db,"SELECT feature_key AS featureKey,enabled FROM license_entitlements WHERE plan_code=?",license.planCode);
+  return response({configured:true,license,entitlements,mode:"pilot-not-enforced"});
+ }
  if(path.startsWith("/api/platform/")){
   if(!(await platformOperator(db,user)))return error("Nexus platform operator access required",403);
  }
