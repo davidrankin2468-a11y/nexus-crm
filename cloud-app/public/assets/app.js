@@ -153,7 +153,7 @@ function printFinance(kind,recordId){
   '<hr><p>Development preview — not a final tax invoice or proof of payment.</p>'
  ].join("");
  const content='<!doctype html><html lang="en"><head><meta charset="utf-8"><title>'+head+
-  '</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:40px auto;padding:20px;color:#1c2930;line-height:1.5}h1{border-bottom:3px solid #77ad62;padding-bottom:12px}h2{font-size:23px}p{margin:14px 0}@media print{body{margin:0}}</style></head><body>'+
+  '</title><link rel="stylesheet" href="/assets/print.css?v=2.6"></head><body>'+
   '<small>'+safe(s.account?.company||"Nexus CRM")+'</small><h1>'+head+'</h1>'+details+'</body></html>';
  const w=window.open("","_blank");
  if(!w){notice("Allow pop-ups for this site to print your document.");return}
