@@ -1,6 +1,31 @@
 "use strict";
 const $=id=>document.getElementById(id);
 const form=$("interest-form"),statusEl=$("interest-status"),receiptArea=$("receipt"),receiptValue=$("receipt-value");
+
+const menuToggle=$("mobile-menu-toggle"),menuLinks=$("primary-links");
+if(menuToggle&&menuLinks){
+ const closeMenu=()=>{
+  menuLinks.classList.remove("open");
+  menuToggle.setAttribute("aria-expanded","false");
+  menuToggle.setAttribute("aria-label","Open navigation menu");
+ };
+ menuToggle.addEventListener("click",()=>{
+  const open=menuToggle.getAttribute("aria-expanded")!=="true";
+  menuLinks.classList.toggle("open",open);
+  menuToggle.setAttribute("aria-expanded",String(open));
+  menuToggle.setAttribute("aria-label",open?"Close navigation menu":"Open navigation menu");
+ });
+ menuLinks.addEventListener("click",event=>{
+  if(event.target.closest("a"))closeMenu();
+ });
+ document.addEventListener("keydown",event=>{if(event.key==="Escape")closeMenu()});
+ document.addEventListener("click",event=>{
+  if(!event.target.closest(".has-mobile-menu"))closeMenu();
+ });
+ window.matchMedia("(min-width:761px)").addEventListener?.("change",event=>{
+  if(event.matches)closeMenu();
+ });
+}
 const year=$("year");if(year)year.textContent=new Date().getFullYear();
 const showStatus=(message,success=false)=>{
  if(!statusEl)return;
