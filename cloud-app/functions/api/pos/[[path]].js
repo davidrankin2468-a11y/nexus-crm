@@ -17,7 +17,7 @@ export async function onRequest({request,env}){
   if(user.role!=="owner"&&user.role!=="admin")return json({error:"POS permission denied"},403);
   if(method==="POST"){
    if(request.headers.get("Origin")!==new URL(request.url).origin)return json({error:"Origin denied"},403);
-   if(request.headers.get("X-CSRF-Token")!==user.csrf_token)return json({error:"CSRF token required"},403);
+   if(request.headers.get("X-Nexus-CSRF")!==user.csrf_token)return json({error:"CSRF token required"},403);
   }
   const tenant=user.tenant_id;
   if(path==="/api/pos/products"&&method==="GET"){
