@@ -442,6 +442,18 @@ async function handler(request,env){
   const created=await storeSnapshot(db,user,note);
   return response({ok:true,snapshot:created},201);
  }
+ if(path.startsWith("/api/backups/")&&path.endsWith("/export")&&method==="POST"){
+  // Export only after password re-verification. A separate client-side passphrase encrypts it.
+  const id=decodeURIComponent(path.slice("/api/backups/".length,-"/export".length));
+  const data=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,data.password)))return error("Incorrect account password",403);
+  const record=await findSnapshot(db,user,id);
+  if(!record)return error("Backup not found",404);
+  if(record.row.payload_json.length>MAX_SNAPSHOT_BYTES)return error("Backup too large for export",413);
+  return response({format:"nexus-crm-business-export-v1",company:user.company,
+   sourceSnapshotId:record.row.id,createdAt:record.row.created_at,exportedAt:now(),
+   counts:record.counts,schemaVersion:1,records:record.records});
+ }
  if(path.startsWith("/api/backups/")&&path.endsWith("/preview")&&method==="GET"){
   const id=decodeURIComponent(path.slice("/api/backups/".length,-"/preview".length));
   const data=await findSnapshot(db,user,id);
