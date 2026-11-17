@@ -195,6 +195,37 @@ function exportLeadsCsv(){
  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
+async function encryptedBackupDownload(data,passphrase){
+ if(!globalThis.crypto?.subtle)throw Error("Your browser does not support secure encrypted file exports.");
+ if(passphrase.length<12||passphrase.length>256)throw Error("Backup passphrase must be 12–256 characters.");
+ const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
+ const encoder=new TextEncoder();
+ const source=encoder.encode(JSON.stringify(data));
+ const material=await crypto.subtle.importKey("raw",encoder.encode(passphrase),"PBKDF2",false,["deriveKey"]);
+ const rounds=200000;
+ const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt,iterations:rounds,hash:"SHA-256"},
+  material,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+ const encrypted=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,source));
+ // Verify that the exact payload can be decrypted before offering the download.
+ const restored=new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM",iv},key,encrypted));
+ if(restored.length!==source.length||restored.some((byte,i)=>byte!==source[i]))throw Error("Backup validation failed");
+ const b64=bytes=>{
+  let binary="";
+  for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return btoa(binary);
+ };
+ const packageData={format:"nexus-crm-encrypted-backup-v1",encryption:"AES-256-GCM",
+  kdf:"PBKDF2-SHA256",iterations:rounds,salt:b64(salt),iv:b64(iv),
+  data:b64(encrypted)};
+ const content=new Blob([JSON.stringify(packageData,null,2)],{type:"application/json"});
+ const url=URL.createObjectURL(content);
+ const anchor=document.createElement("a");
+ anchor.href=url;anchor.download="nexus-crm-encrypted-backup-"+localDate()+".json";
+ document.body.appendChild(anchor);anchor.click();anchor.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),5000);
+ return true;
+}
+
 function managementContent(){
  const nav='<div class="actionrow">'+managementTabs.map(tab=>
   '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
@@ -214,13 +245,20 @@ function managementContent(){
    '<label>Type RECOVER MISSING RECORDS<input name="confirm" required maxlength="40" autocomplete="off" placeholder="RECOVER MISSING RECORDS"></label>'+
    '<label>Confirm with your account password<input name="password" type="password" required autocomplete="current-password"></label>'+
    '<button class="primary" type="submit">Recover missing records</button> <button type="button" data-action="hide-preview">Cancel</button></form>'):"";
+  const downloadForm=preview?panel("Download an encrypted backup",'<p>Save a separate, encrypted copy to this device. Choose a new backup passphrase and keep it somewhere safe. The passphrase stays on your device and is not sent to the server.</p>'+
+    '<form data-form="download-backup"><input type="hidden" name="snapshotId" value="'+safe(preview.snapshot.id)+'">'+
+    '<label>Confirm with your Nexus CRM login password<input name="password" type="password" required autocomplete="current-password"></label>'+
+    '<label>Choose a separate backup passphrase (12+ characters)<input name="backupPassphrase" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label>'+
+    '<label>Repeat the backup passphrase<input name="confirmPassphrase" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label>'+
+    '<button class="primary" type="submit">Download encrypted backup</button></form>'+
+    '<p class="muted">The encrypted file contains business records only, not login credentials. Keep both the file and its separate passphrase safe. Automatic import from this file is not available yet; an assisted recovery process is still needed.</p>'):"";
   return nav+
    panel("Private recovery snapshots",'<p>Cloudflare D1 Time Travel provides automatic point-in-time recovery for this production-storage database, with up to 30 days of history. The snapshots below are a second recovery convenience, stored inside the same D1 database—not an independent off-site backup.</p>'+
     '<div class="hint">This version does not require downloading ZIP files. R2 independent backup storage is not enabled; you should continue using test records until off-site backups and restore drills are completed.</div>'+
     '<form data-form="backup"><label>Snapshot label<input name="note" maxlength="100" value="Before CRM updates"></label>'+
     '<button class="primary" type="submit">Save recovery snapshot</button></form>')+
    panel("Saved snapshots · "+s.backupItems.length,table(["Created","Label","Records included","Action"],entries))+
-   details;
+   details+downloadForm;
  }
  const x=s.securitySummary||{};
  const rows=s.auditEvents.map(e=>'<tr><td>'+safe(new Date(e.createdAt*1000).toLocaleString())+'</td><td>'+
@@ -402,6 +440,14 @@ document.addEventListener("submit",async e=>{
   if(type==="lead-status"){
    await request("/api/sales/leads/"+encodeURIComponent(data.id),"PATCH",{status:data.status});
    await refresh();notice("Inquiry status saved.");return;
+  }
+  if(type==="download-backup"){
+   if(data.backupPassphrase!==data.confirmPassphrase)throw Error("The backup passphrases do not match.");
+   if(String(data.backupPassphrase).length<12)throw Error("Use a backup passphrase of at least 12 characters.");
+   const record=await request("/api/backups/"+encodeURIComponent(data.snapshotId)+"/export","POST",{password:data.password});
+   if(record.format!=="nexus-crm-business-export-v1")throw Error("Unexpected backup export format");
+   await encryptedBackupDownload(record,data.backupPassphrase);
+   f.reset();notice("Encrypted backup downloaded. Keep the file and separate backup passphrase safe.");return;
   }
   if(type==="backup"){
    await request("/api/backups","POST",data);s.backupPreview=null;
