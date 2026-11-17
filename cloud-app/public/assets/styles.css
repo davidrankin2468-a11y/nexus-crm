@@ -105,3 +105,82 @@ button{min-height:42px}
  .actionrow>button{flex:1}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+
+/* Nexus CRM clean workspace: consistent hierarchy across all five pages */
+.content{width:100%;max-width:1680px;margin-inline:auto}
+.content-heading{align-items:center;margin-bottom:22px;padding-bottom:14px;border-bottom:1px solid rgba(164,184,198,.16)}
+.content-heading h1{font-size:clamp(24px,3vw,32px);letter-spacing:-.6px;line-height:1.2}
+.content-heading .actionrow{margin:0}
+.panel{margin:16px 0;padding:20px;border-color:rgba(164,184,198,.18)}
+.panel h2{margin:0 0 13px;font-size:19px;line-height:1.3;letter-spacing:-.25px}
+.panel-note{color:var(--muted);font-size:12px;line-height:1.6;margin:12px 0 0}
+.panel>.table-scroll-hint{margin-top:10px}
+.cards{gap:12px;margin:17px 0}
+.card{padding:20px;border-color:rgba(164,184,198,.18);background:linear-gradient(135deg,#142c3f,#102435)}
+.card strong{font-size:clamp(23px,2.8vw,29px);letter-spacing:-.5px}
+.section-tabs{display:flex;align-items:center;gap:8px;overflow-x:auto;max-width:100%;
+ padding:2px 1px 11px;margin:0 0 11px;scrollbar-width:thin;overscroll-behavior-inline:contain;
+ -webkit-overflow-scrolling:touch}
+.section-tab{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+ min-height:43px;min-width:75px;max-width:220px;padding:10px 15px;white-space:nowrap;
+ border:1px solid rgba(164,184,198,.22);border-radius:10px;background:#142b3b;
+ font-weight:620;font-size:13px;color:#d9e5ec}
+.section-tab.active,.section-tab.primary{color:#102b18;background:var(--green);border-color:var(--green)}
+.editor-panel{padding:0;overflow:hidden}
+.editor-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:14px;
+ cursor:pointer;list-style:none;min-height:58px;padding:17px 20px;
+ font-size:17px;font-weight:740;line-height:1.25;color:var(--text);
+ -webkit-tap-highlight-color:rgba(173,246,139,.15)}
+.editor-panel>summary::-webkit-details-marker{display:none}
+.editor-panel>summary:hover{background:rgba(174,248,130,.055)}
+.editor-panel>summary:focus-visible{outline:2px solid var(--green);outline-offset:-3px}
+.editor-panel[open]>summary{border-bottom:1px solid var(--border)}
+.editor-body{padding:14px 20px 20px}
+.editor-body .gridform{margin-top:0}
+.editor-body form>label:first-child{margin-top:4px}
+.editor-caret{display:block;flex:none;width:10px;height:10px;border-right:2px solid var(--green);
+ border-bottom:2px solid var(--green);transform:rotate(45deg);transition:transform .16s ease;
+ margin-right:4px;margin-top:-6px}
+.editor-panel[open] .editor-caret{transform:rotate(225deg);margin-top:5px}
+.disclosure-panel{border-color:rgba(164,184,198,.13)}
+.tablewrap{background:rgba(4,15,25,.16);border:1px solid rgba(164,184,198,.15);border-radius:9px}
+table{width:100%}th{background:rgba(5,15,25,.25);font-size:12px;letter-spacing:.12px}
+td{font-size:13px}tr:hover td{background:rgba(173,246,139,.035)}
+input[type=hidden]{display:none}
+.actionrow button{min-height:44px}
+button:focus-visible,a:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+@media(min-width:781px){
+ .layout{grid-template-columns:210px minmax(0,1fr)}
+ .sidebar{padding:19px 12px}
+ .sidebar .nav{font-weight:620;min-height:44px}
+ .content{padding-top:25px}
+ .gridform{column-gap:18px}
+}
+@media(max-width:780px){
+ .content-heading{margin-bottom:15px;gap:10px;align-items:center}
+ .content-heading h1{font-size:25px}
+ .panel{padding:16px 14px;margin:13px 0}
+ .panel h2{font-size:18px}
+ .section-tabs{gap:7px;margin:0 0 8px;padding-bottom:8px}
+ .section-tab{min-height:46px;padding:11px 14px}
+ .editor-panel{padding:0}
+ .editor-panel>summary{padding:15px 14px;min-height:56px;font-size:16px}
+ .editor-body{padding:12px 14px 16px}
+ .cards{gap:10px;margin:12px 0}
+ .card{padding:16px 14px}
+ .card strong{font-size:23px}
+ .table-scroll-hint{font-size:12px;margin-bottom:5px}
+ .tablewrap{max-width:100%}
+ .actionrow{gap:8px}
+ .actionrow>button{flex:0 1 auto}
+}
+@media(max-width:430px){
+ .content-heading{gap:8px}
+ .content-heading h1{font-size:24px}
+ .content-heading .actionrow>button{font-size:13px}
+ .sidebar .nav{font-size:11.5px}
+ .editor-body .actionrow button{flex:1}
+ .card strong{font-size:21px}
+}
+@media(prefers-reduced-motion:reduce){.editor-caret{transition:none}}
