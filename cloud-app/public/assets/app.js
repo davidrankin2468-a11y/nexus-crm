@@ -280,7 +280,7 @@ function salesLeadsContent(){
   '<button type="submit">Save</button></form><button type="button" data-delete-lead="'+safe(x.id)+'">Delete inquiry</button></td></tr>');
  return summary+panel("Early-access inquiries",
  '<p>These requests come from the separate public Nexus CRM website. Only the owner can see their details here. A submitted inquiry is not a CRM account or a sale.</p>'+
- '<p><a href="https://nexus-crm-showcase.pages.dev/" target="_blank" rel="noopener noreferrer">Open public product website ↗</a></p>'+
+
  '<div class="actionrow"><button type="button" data-export-leads="true">Export inquiries CSV</button></div>'+
  table(["Business / email","Industry","Requested features","Received","Status"],rows))+
  '<p class="muted">Clicking an email address opens your own email application. No automated outreach or marketing emails are sent by Nexus CRM.</p>';
@@ -520,8 +520,7 @@ function currentTab(){
   '<div class="card">Customers<strong>'+x.customers+'</strong></div>'+
   '<div class="card">Open jobs<strong>'+x.openJobs+'</strong></div>'+'<div class="card">Employees<strong>'+s.employees.length+'</strong></div>'+'<div class="card">Appointments<strong>'+s.appointments.length+'</strong></div>'+
   '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>'+
-  panel("Cloud data is connected",'<p>The dashboard is reading records from your company’s Cloudflare D1 database, not from the public demo or this browser’s local storage.</p>')+
-  panel("Next development milestones",'<p>Finance, private backups, and offline synchronization remain upcoming milestones. Employees and appointments now have permanent cloud storage.</p>');
+  '';
  }
  if(s.page==="Customers"){
   const editing=s.customers.find(c=>c.id===s.editingCustomer);
@@ -587,7 +586,7 @@ function draw(){
  if(s.account.role==="owner"&&s.page==="Account"){s.page="Management";s.managementView="Security";}
  $("mount").innerHTML='<div class="layout"><aside class="sidebar"><div class="tenant">'+safe(s.account.company)+'</div>'+
  (s.account.role==="owner"?tabs:tabs.filter(t=>t!=="Management"&&(t!=="Finance"||s.account.role!=="employee")).concat("Account")).map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+(t==="Account"?"My Account":t)+'</button>').join("")+
- '</aside><main class="content"><div class="content-heading"><div><h1>'+safe(s.page)+'</h1><p>Connected company records · secure cloud alpha</p></div>'+
+ '</aside><main class="content"><div class="content-heading"><div><h1>'+safe(s.page)+'</h1></div>'+
  '<div class="actionrow"><button data-action="refresh">Refresh data</button></div></div><div id="view"></div></main></div>';
  currentTab();
  if(s.account.role==="employee"&&s.page!=="Account"){
