@@ -39,7 +39,7 @@ function notice(text){
  el.textContent=text;el.hidden=false;
 }
 function authScreen(mode){
- s.account=null;s.csrf="";
+ s.account=null;s.csrf="";s.newMfaSecret=null;s.mfaChallenge=null;
  const setup=mode==="setup";
  $("mount").innerHTML='<div class="auth"><h1>'+ (setup?"Set up Nexus CRM":"Nexus CRM Sign In") +'</h1>'+
  '<p>'+(setup?"Create your first private company administrator account.":"Sign in to your private cloud CRM.")+'</p>'+
@@ -431,7 +431,7 @@ function mfaPanel(){
   '<p class="panel-note">This setup expires in 10 minutes. Do not share this key.</p>'+
   '<form data-form="mfa-confirm"><label>Authenticator code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" minlength="6" autocomplete="one-time-code" required></label>'+
   '<button type="submit" class="primary">Verify and enable</button></form>');
- return editorPanel("Enable authenticator protection",
+ return disclosurePanel("Enable authenticator protection",
   '<p>For stronger sign-in security, add an authenticator app on your phone. '+
   'You can enter a setup key manually, so a computer is not required.</p>'+
   '<form data-form="mfa-start"><label>Confirm account password<input type="password" name="password" autocomplete="current-password" required></label>'+
@@ -729,10 +729,10 @@ document.addEventListener("click",async e=>{
   return;
  }
  if(b.dataset.action==="hide-recovery"){s.newRecoveryCodes=null;draw();notice("Recovery codes hidden.");return}
- if(b.dataset.page){s.newRecoveryCodes=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
+ if(b.dataset.page){s.newRecoveryCodes=null;s.newMfaSecret=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
- if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security")s.newRecoveryCodes=null;if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
  if(b.dataset.action==="copy-company-invite"){
   if(!s.newInvite)return;
   const link=location.origin+"/#invite="+s.newInvite.token;
