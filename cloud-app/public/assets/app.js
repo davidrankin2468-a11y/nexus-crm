@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:""};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:""};
 async function request(path,method="GET",data=null){
  const headers={"Accept":"application/json"};
  if(data!==null)headers["Content-Type"]="application/json";
@@ -161,6 +161,53 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
+const managementTabs=["Backups","Security"];
+function describeBackupCounts(counts){
+ const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
+ return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
+}
+function managementContent(){
+ const nav='<div class="actionrow">'+managementTabs.map(tab=>
+  '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
+ if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
+ if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
+ if(s.managementView==="Backups"){
+  const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
+   '<td>'+safe(x.note)+'</td><td>'+describeBackupCounts(x.counts)+'</td><td><button data-preview-backup="'+safe(x.id)+'">Preview</button></td></tr>');
+  const preview=s.backupPreview;
+  const details=preview?panel("Recovery preview — "+new Date(preview.snapshot.createdAt*1000).toLocaleString(),
+   '<p><strong>Integrity:</strong> '+(preview.integrityVerified?"Verified":"Not verified")+'</p>'+
+   '<p><strong>Snapshot:</strong> '+describeBackupCounts(preview.snapshot.counts)+'</p>'+
+   '<p><strong>Currently stored:</strong> '+describeBackupCounts(preview.currentCounts)+'</p>'+
+   '<div class="hint">Recovering this snapshot will add missing business records only. It will not overwrite existing edits, remove newer records, or restore passwords or account settings. A new safety checkpoint will be created first.</div>'+
+   '<form data-form="recover"><input type="hidden" name="snapshotId" value="'+safe(preview.snapshot.id)+'">'+
+   '<label>Type RECOVER MISSING RECORDS<input name="confirm" required maxlength="40" autocomplete="off" placeholder="RECOVER MISSING RECORDS"></label>'+
+   '<label>Confirm with your account password<input name="password" type="password" required autocomplete="current-password"></label>'+
+   '<button class="primary" type="submit">Recover missing records</button> <button type="button" data-action="hide-preview">Cancel</button></form>'):"";
+  return nav+
+   panel("Private recovery snapshots",'<p>Cloudflare D1 Time Travel provides automatic point-in-time recovery for this production-storage database, with up to 30 days of history. The snapshots below are a second recovery convenience, stored inside the same D1 database—not an independent off-site backup.</p>'+
+    '<div class="hint">This version does not require downloading ZIP files. R2 independent backup storage is not enabled; you should continue using test records until off-site backups and restore drills are completed.</div>'+
+    '<form data-form="backup"><label>Snapshot label<input name="note" maxlength="100" value="Before CRM updates"></label>'+
+    '<button class="primary" type="submit">Save recovery snapshot</button></form>')+
+   panel("Saved snapshots · "+s.backupItems.length,table(["Created","Label","Records included","Action"],entries))+
+   details;
+ }
+ const x=s.securitySummary||{};
+ const rows=s.auditEvents.map(e=>'<tr><td>'+safe(new Date(e.createdAt*1000).toLocaleString())+'</td><td>'+
+  safe(e.category)+'</td><td>'+safe(e.action)+'</td></tr>');
+ return nav+panel("Account security",'<p><strong>Company:</strong> '+safe(s.account?.company||"")+'</p>'+
+    '<p><strong>Owner:</strong> '+safe(s.account?.email||"")+'</p>'+
+    '<p><strong>Active sessions:</strong> '+safe(x.activeSessions??"—")+'</p>'+
+    '<p><strong>Multifactor authentication:</strong> Not enabled yet.</p>'+
+    '<p><strong>Cloud snapshots:</strong> '+safe(x.backups??"—")+'</p>'+
+    '<p><strong>Independent off-site backup:</strong> Not configured.</p>'+
+    '<div class="hint">Passwords, session cookies, and login tokens are excluded from recovery snapshots. Keep using fictional records until security review, MFA, and off-site backup testing are complete.</div>')+
+    panel("Sign out other devices",'<p>Revoke other active Nexus CRM sign-in sessions. This device stays signed in.</p>'+
+    '<form data-form="revoke-sessions"><label>Account password<input name="password" type="password" required autocomplete="current-password"></label>'+
+    '<button class="primary" type="submit">Sign out other devices</button></form>')+
+    panel("Recent activity",table(["When","Area","Action"],rows));
+}
+
 function currentTab(){
  const d=$("view");
  if(s.page==="Dashboard"){
@@ -229,12 +276,7 @@ function currentTab(){
   }
  }
  if(s.page==="Finance")d.innerHTML=financeContent();
- if(s.page==="Management"){
-  d.innerHTML=panel("Company account",'<p><strong>Company:</strong> '+safe(s.account?.company||"")+'</p><p><strong>Account:</strong> '+safe(s.account?.email||"")+'</p><p><strong>Role:</strong> '+safe(s.account?.role||"")+'</p>')+
-  panel("Security and backups",'<p>Sign-in uses a server-side password hash and secure session cookie. Cloud records are filtered by company identity on every query.</p>'+
-  '<p>This is an alpha test environment. MFA, staff invitations, audit logs, automated backup/restore tests, and offline sync remain future work.</p>'+
-  '<button data-action="logout">Sign out</button>');
- }
+ if(s.page==="Management")d.innerHTML=managementContent();
 }
 function draw(){
  if(!s.account)return;
@@ -256,6 +298,12 @@ async function refresh(){
   s.estimates=[];s.invoices=[];s.payments=[];s.financeReport=null;
   s.financeError=e?.message||"Unable to load Finance";
  }
+ if(s.account?.role==="owner"){
+  try{
+   const [b,security,activity]=await Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")]);
+   s.backupItems=b.items;s.securitySummary=security;s.auditEvents=activity.items;s.recoveryError="";
+  }catch(e){s.recoveryError=e?.message||"Unable to load recovery controls";}
+ }
  draw();
 }
 async function start(){
@@ -272,6 +320,12 @@ document.addEventListener("click",async e=>{
  if(b.dataset.page){s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;draw();notice("");return}
+ if(b.dataset.previewBackup){
+  try{s.backupPreview=await request("/api/backups/"+encodeURIComponent(b.dataset.previewBackup)+"/preview");draw();notice("Snapshot checked for integrity.");}
+  catch(err){notice(err.message)}return;
+ }
+ if(b.dataset.action==="hide-preview"){s.backupPreview=null;draw();return}
  if(b.dataset.customer){s.page="Customers";s.editingCustomer=b.dataset.customer;draw();return}
  if(b.dataset.job){s.page="Operations";s.operationsView="Jobs";s.editingJob=b.dataset.job;draw();return}
  if(b.dataset.employee){s.page="Operations";s.operationsView="Employees";s.editingEmployee=b.dataset.employee;draw();return}
@@ -304,6 +358,20 @@ document.addEventListener("submit",async e=>{
    const url=s.editingAppointment?"/api/appointments/"+encodeURIComponent(s.editingAppointment):"/api/appointments";
    await request(url,s.editingAppointment?"PATCH":"POST",data);s.editingAppointment=null;
    await refresh();notice("Appointment saved to your private cloud database.");return;
+  }
+  if(type==="backup"){
+   await request("/api/backups","POST",data);s.backupPreview=null;
+   await refresh();notice("Recovery snapshot saved privately in the CRM database.");return;
+  }
+  if(type==="recover"){
+   if(data.confirm!=="RECOVER MISSING RECORDS")throw new Error("Type the exact confirmation phrase.");
+   const result=await request("/api/backups/"+encodeURIComponent(data.snapshotId)+"/recover","POST",{password:data.password,confirm:data.confirm});
+   s.backupPreview=null;await refresh();
+   notice("Recovery complete: "+result.restored+" missing records restored; "+result.skipped+" existing records kept. Checkpoint created.");return;
+  }
+  if(type==="revoke-sessions"){
+   const result=await request("/api/security/logout-others","POST",data);
+   await refresh();notice(result.otherSessionsRevoked+" other sessions signed out.");return;
   }
   if(type==="estimate"){
    data.amount=Number(data.amount);
