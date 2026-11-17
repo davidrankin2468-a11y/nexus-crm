@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:""};
 async function request(path,method="GET",data=null){
  const headers={"Accept":"application/json"};
  if(data!==null)headers["Content-Type"]="application/json";
@@ -58,6 +58,7 @@ const financeNavigation=()=>'<div class="actionrow">'+financeViews.map(t=>
  '<button type="button" data-finance="'+t+'" class="'+(s.financeView===t?"primary":"")+'">'+t+'</button>').join("")+'</div>';
 function financeContent(){
  const nav=financeNavigation(),view=s.financeView;
+ if(s.financeError)return nav+panel("Finance needs attention",'<p>Unable to load cloud financial records: '+safe(s.financeError)+'</p><p>Your customers and jobs are still available. Select Refresh data to try Finance again.</p>');
  if(view==="Estimates"){
   const e=s.estimates.find(x=>x.id===s.editingEstimate);
   const create='<form data-form="estimate" class="gridform">'+
@@ -246,9 +247,15 @@ function draw(){
 async function refresh(){
  const me=await request("/api/me");
  s.account=me.user;s.csrf=me.csrf;
- const [customers,jobs,employees,appointments,dashboard,estimates,invoices,payments,reports]=await Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/employees"),request("/api/appointments"),request("/api/dashboard"),request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")]);
+ const [customers,jobs,employees,appointments,dashboard]=await Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/employees"),request("/api/appointments"),request("/api/dashboard")]);
  s.customers=customers.items;s.jobs=jobs.items;s.employees=employees.items;s.appointments=appointments.items;s.dashboard=dashboard;
- s.estimates=estimates.items;s.invoices=invoices.items;s.payments=payments.items;s.financeReport=reports.totals;
+ try{
+  const [estimates,invoices,payments,reports]=await Promise.all([request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")]);
+  s.estimates=estimates.items;s.invoices=invoices.items;s.payments=payments.items;s.financeReport=reports.totals;s.financeError="";
+ }catch(e){
+  s.estimates=[];s.invoices=[];s.payments=[];s.financeReport=null;
+  s.financeError=e?.message||"Unable to load Finance";
+ }
  draw();
 }
 async function start(){
