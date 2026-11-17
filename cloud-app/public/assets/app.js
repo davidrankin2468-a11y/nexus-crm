@@ -684,7 +684,7 @@ document.addEventListener("click",async e=>{
  if(b.dataset.page){s.newRecoveryCodes=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
- if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security")s.newRecoveryCodes=null;if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
  if(b.dataset.action==="copy-company-invite"){
   if(!s.newInvite)return;
   const link=location.origin+"/#invite="+s.newInvite.token;
