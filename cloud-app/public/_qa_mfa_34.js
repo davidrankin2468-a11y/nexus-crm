@@ -16,7 +16,7 @@ setTimeout(async()=>{
   add("Single password change form",document.querySelectorAll('[data-form="change-password"]').length===1);
   s.newMfaSecret={secret:"THISISONLYATESTKEY"};
   draw();
-  add("Manual setup key displayed",document.getElementById("view").textContent.includes("THISISONLYATESTKEY"));
+  add("Manual setup key displayed",document.querySelector('input[aria-label="Authenticator manual setup key"]')?.value==="THISISONLYATESTKEY");
   add("Six-digit confirmation form",!!document.querySelector('form[data-form="mfa-confirm"]'));
   s.mfaStatus={available:true,enabled:true};s.newMfaSecret=null;draw();
   add("MFA disable form",!!document.querySelector('form[data-form="mfa-disable"]'));
