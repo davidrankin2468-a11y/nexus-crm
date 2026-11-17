@@ -300,6 +300,11 @@ function managementContent(){
     '<p><strong>Cloud snapshots:</strong> '+safe(x.backups??"—")+'</p>'+
     '<p><strong>Independent off-site backup:</strong> Not configured.</p>'+
     '<div class="hint">Passwords, session cookies, and login tokens are excluded from recovery snapshots. Keep using fictional records until security review, MFA, and off-site backup testing are complete.</div>')+
+    panel("Change account password",'<p>Choose a new password of at least 14 characters. Your other active sessions will be signed out automatically.</p>'+
+    '<form data-form="change-password"><label>Current password<input name="currentPassword" type="password" required autocomplete="current-password"></label>'+
+    '<label>New password<input name="newPassword" type="password" required minlength="14" maxlength="128" autocomplete="new-password"></label>'+
+    '<label>Confirm new password<input name="confirmPassword" type="password" required minlength="14" maxlength="128" autocomplete="new-password"></label>'+
+    '<button class="primary" type="submit">Update password</button></form>')+
     panel("Sign out other devices",'<p>Revoke other active Nexus CRM sign-in sessions. This device stays signed in.</p>'+
     '<form data-form="revoke-sessions"><label>Account password<input name="password" type="password" required autocomplete="current-password"></label>'+
     '<button class="primary" type="submit">Sign out other devices</button></form>')+
@@ -495,6 +500,12 @@ document.addEventListener("submit",async e=>{
    const result=await request("/api/backups/"+encodeURIComponent(data.snapshotId)+"/recover","POST",{password:data.password,confirm:data.confirm});
    s.backupPreview=null;await refresh();
    notice("Recovery complete: "+result.restored+" missing records restored; "+result.skipped+" existing records kept. Checkpoint created.");return;
+  }
+  if(type==="change-password"){
+   if(data.newPassword!==data.confirmPassword)throw Error("New passwords do not match.");
+   if(String(data.newPassword).length<14)throw Error("Password must be at least 14 characters.");
+   const result=await request("/api/security/change-password","POST",{currentPassword:data.currentPassword,newPassword:data.newPassword});
+   f.reset();await refresh();notice("Account password updated. "+result.otherSessionsRevoked+" other sessions signed out.");return;
   }
   if(type==="revoke-sessions"){
    const result=await request("/api/security/logout-others","POST",data);
