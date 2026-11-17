@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -86,6 +86,15 @@ async function invitationScreen(){
   authScreen("login");
   notice("This company invitation is invalid, expired or already used. Ask the Nexus owner for a new link.");
  }
+}
+function authenticatorScreen(){
+ if(!s.mfaChallenge){authScreen("login");return}
+ $("mount").innerHTML='<div class="auth"><h1>Authenticator verification</h1>'+
+  '<p>Enter the current six-digit code from your authenticator app to finish signing in.</p>'+
+  '<form data-form="login-mfa"><label>Six-digit code<input type="text" inputmode="numeric" pattern="[0-9]{6}" name="code" maxlength="6" minlength="6" autocomplete="one-time-code" required></label>'+
+  '<button type="submit" class="primary">Verify and sign in</button> '+
+  '<button type="button" data-action="cancel-mfa-login">Back to sign in</button></form>'+
+  '<p class="muted">Codes rotate every 30 seconds. If you lost your authenticator, use a saved recovery code from the sign-in page.</p></div>';
 }
 function recoveryScreen(){
  s.account=null;s.csrf="";
@@ -404,6 +413,30 @@ function companyAccessContent(){
   panel("Companies · "+s.companies.length,table(["Company","Owner account","Users","Customers","Jobs"],companies));
 }
 
+function mfaPanel(){
+ const status=s.mfaStatus||{};
+ if(!status.available)return panel("Authenticator protection",
+  '<p class="panel-note">The authenticator service has not been configured for this environment.</p>');
+ if(status.enabled)return panel("Authenticator protection",
+  '<p><strong>Enabled.</strong> A six-digit authenticator code is required after your password on new sign-ins.</p>'+
+  '<p class="panel-note">Keep your one-time recovery codes in a safe place.</p>'+
+  '<form data-form="mfa-disable">'+
+  '<label>Current account password<input name="password" type="password" autocomplete="current-password" required></label>'+
+  '<label>Current authenticator code<input name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" required></label>'+
+  '<button type="submit">Disable authenticator protection</button></form>');
+ if(s.newMfaSecret)return panel("Finish authenticator setup",
+  '<p>Add a new account in your authenticator app using the manual setup key below. '+
+  'Choose a time-based, six-digit code. Your device time should be set automatically.</p>'+
+  '<label>Private setup key<input type="text" readonly aria-label="Authenticator manual setup key" value="'+safe(s.newMfaSecret.secret)+'"></label>'+
+  '<p class="panel-note">This setup expires in 10 minutes. Do not share this key.</p>'+
+  '<form data-form="mfa-confirm"><label>Authenticator code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" minlength="6" autocomplete="one-time-code" required></label>'+
+  '<button type="submit" class="primary">Verify and enable</button></form>');
+ return editorPanel("Enable authenticator protection",
+  '<p>For stronger sign-in security, add an authenticator app on your phone. '+
+  'You can enter a setup key manually, so a computer is not required.</p>'+
+  '<form data-form="mfa-start"><label>Confirm account password<input type="password" name="password" autocomplete="current-password" required></label>'+
+  '<button type="submit" class="primary">Generate authenticator setup key</button></form>');
+}
 function accountSecurityContent(){
  const generated=s.newRecoveryCodes;
  const issued=generated?panel("Save your recovery codes now",
@@ -411,7 +444,7 @@ function accountSecurityContent(){
   '<label>Recovery codes<textarea readonly rows="11" aria-label="New account recovery codes">'+safe(generated.join("\n"))+'</textarea></label>'+
   '<div class="actionrow"><button type="button" class="primary" data-action="copy-recovery">Copy recovery codes</button>'+
   '<button type="button" data-action="hide-recovery">Hide codes</button></div>'):"";
- return panel("Change your account password",
+ return mfaPanel()+panel("Change your account password",
   '<p>Changing your password signs out other devices.</p>'+
   '<form data-form="change-password">'+
   '<label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required></label>'+
@@ -637,12 +670,14 @@ async function refresh(){
  ]).then(([invitations,companies])=>({invitations,companies})):Promise.resolve(null);
  const staffLoad=owner?Promise.all([request("/api/staff/users"),request("/api/staff/invitations")])
   .then(([users,invitations])=>({users,invitations})):Promise.resolve(null);
- const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad,staffLoad]);
+ const mfaLoad=request("/api/security/mfa/status");
+ const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad,staffLoad,mfaLoad]);
  if(seq!==refreshNumber)return;
  if(outcomes[0].status==="rejected")throw outcomes[0].reason;
  const core=outcomes[0].value;
  s.customers=core.customers.items;s.jobs=core.jobs.items;s.employees=core.employees.items;
  s.appointments=core.appointments.items;s.dashboard=core.dashboard;
+ s.mfaStatus=outcomes[6].status==="fulfilled"?outcomes[6].value:{available:false,enabled:false};
  const financial=outcomes[1];
  if(financial.status==="fulfilled"){
   s.estimates=financial.value.estimates.items;s.invoices=financial.value.invoices.items;
@@ -684,6 +719,7 @@ async function start(){
 }
 document.addEventListener("click",async e=>{
  const b=e.target.closest("button");if(!b)return;
+ if(b.dataset.action==="cancel-mfa-login"){s.mfaChallenge=null;authScreen("login");notice("");return}
  if(b.dataset.action==="recover-screen"){recoveryScreen();notice("");return}
  if(b.dataset.action==="return-login"){authScreen("login");notice("");return}
  if(b.dataset.action==="copy-recovery"){
@@ -794,7 +830,28 @@ document.addEventListener("submit",async e=>{
    await request("/api/platform/invitations/"+encodeURIComponent(data.id)+"/revoke","POST",{password:data.password});
    s.newInvite=null;await refresh();notice("Invitation revoked.");return;
   }
-  if(type==="login"||type==="setup"){await request("/api/"+type,"POST",data);await refresh();notice(type==="setup"?"Administrator created and signed in.":"Signed in successfully.");return}
+  if(type==="login"||type==="setup"){
+   const result=await request("/api/"+type,"POST",data);
+   if(result.mfaRequired){s.mfaChallenge=result.challenge;authenticatorScreen();notice("");return;}
+   await refresh();notice(type==="setup"?"Administrator created and signed in.":"Signed in successfully.");return;
+  }
+  if(type==="login-mfa"){
+   if(!s.mfaChallenge)throw Error("Authenticator challenge expired. Sign in again.");
+   await request("/api/login/mfa","POST",{challenge:s.mfaChallenge,code:data.code});
+   s.mfaChallenge=null;await refresh();notice("Signed in securely.");return;
+  }
+  if(type==="mfa-start"){
+   s.newMfaSecret=await request("/api/security/mfa/start","POST",{password:data.password});
+   draw();notice("Enter the setup key in your authenticator app, then verify a six-digit code.");return;
+  }
+  if(type==="mfa-confirm"){
+   await request("/api/security/mfa/confirm","POST",{code:data.code});
+   s.newMfaSecret=null;await refresh();notice("Authenticator verification enabled. Your other sessions were signed out.");return;
+  }
+  if(type==="mfa-disable"){
+   await request("/api/security/mfa/disable","POST",{password:data.password,code:data.code});
+   await refresh();notice("Authenticator verification disabled.");return;
+  }
   if(type==="customer"){
    const url=s.editingCustomer?"/api/customers/"+encodeURIComponent(s.editingCustomer):"/api/customers";
    await request(url,s.editingCustomer?"PATCH":"POST",data);s.editingCustomer=null;
