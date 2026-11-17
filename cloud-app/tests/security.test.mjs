@@ -398,5 +398,30 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
   const simple=await expectStatus(db,null,"POST","/api/login",{email:emailA,password:passwordA},200);
   assert.equal(simple.mfaRequired,undefined,"MFA-disabled users sign in normally");
  });
+ await t.test("MFA disaster recovery: saved code resets password and disables lost authenticator",async()=>{
+  const codes=await expectStatus(db,a,"POST","/api/security/recovery-codes",{password:passwordA},201);
+  const start=await expectStatus(db,a,"POST","/api/security/mfa/start",{password:passwordA},201);
+  await expectStatus(db,a,"POST","/api/security/mfa/confirm",{
+   code:totp(start.secret,Math.floor(Date.now()/30000)-1)
+  },200);
+  const attempt=await expectStatus(db,null,"POST","/api/login",{email:emailA,password:passwordA},200);
+  assert.equal(attempt.mfaRequired,true);
+  const replacement="QA-Owner-Rescued-Password-2468";
+  await expectStatus(db,null,"POST","/api/recover",{
+   email:emailA,code:codes.codes[0],newPassword:replacement
+  },200);
+  await expectStatus(db,a,"GET","/api/me",undefined,401);
+  await expectStatus(db,null,"POST","/api/login/mfa",{
+   challenge:attempt.challenge,code:totp(start.secret,Math.floor(Date.now()/30000))
+  },403);
+  const recovered=await expectStatus(db,a,"POST","/api/login",{
+   email:emailA,password:replacement
+  },200);
+  assert.equal(recovered.mfaRequired,undefined);
+  assert.equal((await expectStatus(db,a,"GET","/api/security/mfa/status",undefined,200)).enabled,false);
+  await expectStatus(db,null,"POST","/api/recover",{
+   email:emailA,code:codes.codes[0],newPassword:replacement
+  },403);
+ });
  console.log("All isolated QA scenarios finished. No production database used.");
 });
