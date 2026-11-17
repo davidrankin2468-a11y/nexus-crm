@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],dashboard:null,editingCustomer:null,editingJob:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs"};
 async function request(path,method="GET",data=null){
  const headers={"Accept":"application/json"};
  if(data!==null)headers["Content-Type"]="application/json";
@@ -54,10 +54,10 @@ function currentTab(){
   const x=s.dashboard||{customers:0,openJobs:0,jobPipeline:0};
   d.innerHTML='<div class="cards">'+
   '<div class="card">Customers<strong>'+x.customers+'</strong></div>'+
-  '<div class="card">Open jobs<strong>'+x.openJobs+'</strong></div>'+
+  '<div class="card">Open jobs<strong>'+x.openJobs+'</strong></div>'+'<div class="card">Employees<strong>'+s.employees.length+'</strong></div>'+'<div class="card">Appointments<strong>'+s.appointments.length+'</strong></div>'+
   '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>'+
   panel("Cloud data is connected",'<p>The dashboard is reading records from your company’s Cloudflare D1 database, not from the public demo or this browser’s local storage.</p>')+
-  panel("Next development milestones",'<p>Invoices, estimates, employees, appointment scheduling, backups, and offline synchronization will be migrated after the first secure database workflows are tested.</p>');
+  panel("Next development milestones",'<p>Finance, private backups, and offline synchronization remain upcoming milestones. Employees and appointments now have permanent cloud storage.</p>');
  }
  if(s.page==="Customers"){
   const editing=s.customers.find(c=>c.id===s.editingCustomer);
@@ -70,6 +70,8 @@ function currentTab(){
   d.innerHTML=panel(editing?"Edit customer":"Add customer",form)+panel("Saved customers",table(["Name","Email","Phone","Action"],rows));
  }
  if(s.page==="Operations"){
+  const nav='<div class="actionrow">'+["Jobs","Schedule","Employees"].map(t=>'<button data-operation="'+t+'" class="'+(s.operationsView===t?"primary":"")+'">'+t+'</button>').join("")+'</div>';
+  if(s.operationsView==="Jobs"){
   const editing=s.jobs.find(j=>j.id===s.editingJob);
   const form=s.customers.length?
     '<form data-form="job" class="gridform">'+
@@ -82,11 +84,40 @@ function currentTab(){
     (editing?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>':
     '<p>Add a customer in the Customers tab before creating jobs.</p>';
   const rows=s.jobs.map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(j.customerName)+'</td><td>'+money(j.amount)+'</td><td>'+statusBadge(j.status)+'</td><td>'+safe(j.scheduledDate||"Not scheduled")+'</td><td><button data-job="'+safe(j.id)+'">Edit</button></td></tr>');
-  d.innerHTML=panel(editing?"Edit job":"Create job",form)+panel("Saved jobs",table(["Job","Customer","Amount","Status","Date","Action"],rows));
+  d.innerHTML=nav+panel(editing?"Edit job":"Create job",form)+panel("Saved jobs",table(["Job","Customer","Amount","Status","Date","Action"],rows));
+
+  }else if(s.operationsView==="Employees"){
+   const e=s.employees.find(x=>x.id===s.editingEmployee);
+   const form='<form data-form="employee" class="gridform">'+
+    input("name","Employee name",e?.name||"","text",true)+input("jobTitle","Role",e?.jobTitle||"")+
+    input("email","Email",e?.email||"","email")+input("phone","Phone",e?.phone||"")+
+    '<label>Status<select name="status">'+["Active","Inactive"].map(v=>'<option value="'+v+'" '+(v===(e?.status||"Active")?"selected":"")+'>'+v+'</option>').join("")+'</select></label>'+
+    '<div class="actionrow"><button class="primary" type="submit">'+(e?"Save employee":"Add employee")+'</button>'+
+    (e?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>';
+   const rows=s.employees.map(e=>'<tr><td>'+safe(e.name)+'</td><td>'+safe(e.jobTitle)+'</td><td>'+safe(e.email)+'</td><td>'+statusBadge(e.status)+'</td><td><button data-employee="'+safe(e.id)+'">Edit</button></td></tr>');
+   d.innerHTML=nav+panel(e?"Edit employee":"Add employee",form)+panel("Employees",table(["Name","Role","Email","Status","Action"],rows))+
+     '<p class="muted">This is a staff directory. Employee login accounts and payroll are not enabled.</p>';
+  }else{
+   const e=s.appointments.find(x=>x.id===s.editingAppointment);
+   const jobs=s.jobs.map(j=>'<option value="'+safe(j.id)+'" '+(j.id===e?.jobId?"selected":"")+'>'+safe(j.title)+'</option>').join("");
+   const staff='<option value="">Unassigned</option>'+s.employees.filter(x=>x.status==="Active"||x.id===e?.employeeId).map(x=>'<option value="'+safe(x.id)+'" '+(x.id===e?.employeeId?"selected":"")+'>'+safe(x.name)+'</option>').join("");
+   const form=s.jobs.length?'<form data-form="appointment" class="gridform">'+
+    '<label>Job<select name="jobId" required>'+jobs+'</select></label>'+
+    '<label>Employee<select name="employeeId">'+staff+'</select></label>'+
+    input("appointmentDate","Date",e?.appointmentDate||new Date().toISOString().slice(0,10),"date",true)+
+    '<label>Time<input name="appointmentTime" type="time" required value="'+safe(e?.appointmentTime||"09:00")+'"></label>'+
+    input("location","Location",e?.location||"")+input("notes","Notes",e?.notes||"")+
+    '<div class="actionrow"><button class="primary" type="submit">'+(e?"Save appointment":"Schedule appointment")+'</button>'+
+    (e?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>':
+    '<p>Create a job first to schedule an appointment.</p>';
+   const rows=s.appointments.map(x=>'<tr><td>'+safe(x.appointmentDate)+'</td><td>'+safe(x.appointmentTime)+'</td><td>'+safe(x.jobTitle)+'</td><td>'+safe(x.employeeName)+'</td><td>'+safe(x.location)+'</td><td><button data-appointment="'+safe(x.id)+'">Edit</button></td></tr>');
+   d.innerHTML=nav+panel(e?"Edit appointment":"Schedule appointment",form)+panel("Appointments",table(["Date","Time","Job","Employee","Location","Action"],rows))+
+   '<p class="muted">Appointment times are local business times; external calendar sync is not connected.</p>';
+  }
  }
  if(s.page==="Finance"){
   d.innerHTML=panel("Finance — next cloud migration",'<p>The previous public demo has estimates, invoices, payments, reports, and printable previews. These features are not yet connected to this private database.</p>'+
-   '<div class="hint">For now, this secure alpha supports live database saving for customers and jobs only. Do not use the public demo to store real invoices or payment information.</div>');
+   '<div class="hint">This secure alpha saves customers, jobs, employees and appointments to the cloud; Finance is still in development. Do not use the public demo to store real invoices or payment information.</div>');
  }
  if(s.page==="Management"){
   d.innerHTML=panel("Company account",'<p><strong>Company:</strong> '+safe(s.account?.company||"")+'</p><p><strong>Account:</strong> '+safe(s.account?.email||"")+'</p><p><strong>Role:</strong> '+safe(s.account?.role||"")+'</p>')+
@@ -106,8 +137,8 @@ function draw(){
 async function refresh(){
  const me=await request("/api/me");
  s.account=me.user;s.csrf=me.csrf;
- const [customers,jobs,dashboard]=await Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/dashboard")]);
- s.customers=customers.items;s.jobs=jobs.items;s.dashboard=dashboard;
+ const [customers,jobs,employees,appointments,dashboard]=await Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/employees"),request("/api/appointments"),request("/api/dashboard")]);
+ s.customers=customers.items;s.jobs=jobs.items;s.employees=employees.items;s.appointments=appointments.items;s.dashboard=dashboard;
  draw();
 }
 async function start(){
@@ -121,10 +152,13 @@ async function start(){
 }
 document.addEventListener("click",async e=>{
  const b=e.target.closest("button");if(!b)return;
- if(b.dataset.page){s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;draw();notice("");return}
+ if(b.dataset.page){s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
+ if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
  if(b.dataset.customer){s.page="Customers";s.editingCustomer=b.dataset.customer;draw();return}
- if(b.dataset.job){s.page="Operations";s.editingJob=b.dataset.job;draw();return}
- if(b.dataset.action==="cancel-edit"){s.editingCustomer=null;s.editingJob=null;draw();return}
+ if(b.dataset.job){s.page="Operations";s.operationsView="Jobs";s.editingJob=b.dataset.job;draw();return}
+ if(b.dataset.employee){s.page="Operations";s.operationsView="Employees";s.editingEmployee=b.dataset.employee;draw();return}
+ if(b.dataset.appointment){s.page="Operations";s.operationsView="Schedule";s.editingAppointment=b.dataset.appointment;draw();return}
+ if(b.dataset.action==="cancel-edit"){s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();return}
  if(b.dataset.action==="retry"){await start();return}
  if(b.dataset.action==="refresh"){try{await refresh();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
  if(b.dataset.action==="logout"){try{await request("/api/logout","POST",{});s.account=null;s.csrf="";authScreen("login");notice("Signed out.")}catch(err){notice(err.message)}}
@@ -139,6 +173,16 @@ document.addEventListener("submit",async e=>{
    const url=s.editingCustomer?"/api/customers/"+encodeURIComponent(s.editingCustomer):"/api/customers";
    await request(url,s.editingCustomer?"PATCH":"POST",data);s.editingCustomer=null;
    await refresh();notice("Customer saved to your private cloud database.");return;
+  }
+  if(type==="employee"){
+   const url=s.editingEmployee?"/api/employees/"+encodeURIComponent(s.editingEmployee):"/api/employees";
+   await request(url,s.editingEmployee?"PATCH":"POST",data);s.editingEmployee=null;
+   await refresh();notice("Employee saved to your private cloud database.");return;
+  }
+  if(type==="appointment"){
+   const url=s.editingAppointment?"/api/appointments/"+encodeURIComponent(s.editingAppointment):"/api/appointments";
+   await request(url,s.editingAppointment?"PATCH":"POST",data);s.editingAppointment=null;
+   await refresh();notice("Appointment saved to your private cloud database.");return;
   }
   if(type==="job"){
    data.amount=Number(data.amount);
