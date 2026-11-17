@@ -504,11 +504,7 @@ function managementContent(){
     '<p><strong>Cloud snapshots:</strong> '+safe(x.backups??"—")+'</p>'+
     '<p><strong>Independent off-site backup:</strong> Not configured.</p>'+
     '<div class="hint">Passwords, session cookies, and login tokens are excluded from recovery snapshots. Keep using fictional records until security review, MFA, and off-site backup testing are complete.</div>')+
-    panel("Change account password",'<p>Choose a new password of at least 14 characters. Your other active sessions will be signed out automatically.</p>'+
-    '<form data-form="change-password"><label>Current password<input name="currentPassword" type="password" required autocomplete="current-password"></label>'+
-    '<label>New password<input name="newPassword" type="password" required minlength="14" maxlength="128" autocomplete="new-password"></label>'+
-    '<label>Confirm new password<input name="confirmPassword" type="password" required minlength="14" maxlength="128" autocomplete="new-password"></label>'+
-    '<button class="primary" type="submit">Update password</button></form>')+
+    accountSecurityContent()+
     panel("Sign out other devices",'<p>Revoke other active Nexus CRM sign-in sessions. This device stays signed in.</p>'+
     '<form data-form="revoke-sessions"><label>Account password<input name="password" type="password" required autocomplete="current-password"></label>'+
     '<button class="primary" type="submit">Sign out other devices</button></form>')+
@@ -588,11 +584,11 @@ function currentTab(){
 }
 function draw(){
  if(!s.account)return;
+ if(s.account.role==="owner"&&s.page==="Account"){s.page="Management";s.managementView="Security";}
  $("mount").innerHTML='<div class="layout"><aside class="sidebar"><div class="tenant">'+safe(s.account.company)+'</div>'+
- tabs.filter(t=>t!=="Management"||s.account.role==="owner").filter(t=>t!=="Finance"||s.account.role!=="employee").map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+t+'</button>').join("")+
+ (s.account.role==="owner"?tabs:tabs.filter(t=>t!=="Management"&&(t!=="Finance"||s.account.role!=="employee")).concat("Account")).map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+(t==="Account"?"My Account":t)+'</button>').join("")+
  '</aside><main class="content"><div class="content-heading"><div><h1>'+safe(s.page)+'</h1><p>Connected company records · secure cloud alpha</p></div>'+
- '<div class="actionrow"><button type="button" data-action="account-security">Account security</button>'+
- '<button data-action="refresh">Refresh data</button></div></div><div id="view"></div></main></div>';
+ '<div class="actionrow"><button data-action="refresh">Refresh data</button></div></div><div id="view"></div></main></div>';
  currentTab();
  if(s.account.role==="employee"&&s.page!=="Account"){
   // Employees have read-only operational access; server RBAC enforces this as well.
@@ -676,7 +672,6 @@ async function start(){
 }
 document.addEventListener("click",async e=>{
  const b=e.target.closest("button");if(!b)return;
- if(b.dataset.action==="account-security"){s.page="Account";s.newRecoveryCodes=null;draw();notice("");return}
  if(b.dataset.action==="recover-screen"){recoveryScreen();notice("");return}
  if(b.dataset.action==="return-login"){authScreen("login");notice("");return}
  if(b.dataset.action==="copy-recovery"){
@@ -747,7 +742,10 @@ document.addEventListener("submit",async e=>{
   }
   if(type==="generate-recovery"){
    const result=await request("/api/security/recovery-codes","POST",{password:data.password});
-   s.newRecoveryCodes=result.codes;s.page="Account";draw();
+   s.newRecoveryCodes=result.codes;
+   if(s.account?.role==="owner"){s.page="Management";s.managementView="Security";}
+   else{s.page="Account";}
+   draw();
    notice("New codes generated. Save them now; they cannot be displayed again.");return;
   }
   if(type==="accept-staff"){
