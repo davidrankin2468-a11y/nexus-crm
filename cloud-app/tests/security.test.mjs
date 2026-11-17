@@ -2,12 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { createHash, randomBytes, webcrypto } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { onRequest } from "../functions/api/[[path]].js";
 
 // ALL data lives in an in-memory database. No live Cloudflare D1 rows,
 // production sessions, third-party APIs or secrets are used by this suite.
-globalThis.crypto = webcrypto;
 const base = "https://qa.nexus.invalid";
 const sha256 = x => createHash("sha256").update(x).digest("hex");
 const random = () => randomBytes(32).toString("hex");
