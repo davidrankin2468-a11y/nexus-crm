@@ -295,8 +295,44 @@ async function handler(request,env){
   const candidate=await passwordHash(password,u?.salt||"4aaf994521f56bead3aa815d0a3379cc",u?.iterations||ITERS);
   if(!u||u.disabled_at!==null||!same(candidate,u.password_hash)){await badLogin(db,rateKey);return error("Invalid email or password",401)}
   await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
-  const s=await issue(db,u.id);
-  return response({ok:true,csrf:s.csrf},200,{"Set-Cookie":setCookie(s.token)});
+  const mfa=await first(db,"SELECT user_id FROM user_mfa WHERE user_id=? AND enabled_at IS NOT NULL",u.id);
+  if(mfa){
+   if(!env.MFA_MASTER_KEY)return error("Authenticator temporarily unavailable",503);
+   const challenge=secret(),t=now();
+   await db.batch([
+    db.prepare("DELETE FROM mfa_login_challenges WHERE user_id=?").bind(u.id),
+    db.prepare("INSERT INTO mfa_login_challenges(token_hash,user_id,created_at,expires_at) VALUES(?,?,?,?)")
+     .bind(await hash(challenge),u.id,t,t+MFA_CHALLENGE_SECONDS)
+   ]);
+   return response({ok:true,mfaRequired:true,challenge,expiresIn:MFA_CHALLENGE_SECONDS});
+  }
+  const session=await issue(db,u.id);
+  return response({ok:true,csrf:session.csrf},200,{"Set-Cookie":setCookie(session.token)});
+ }
+ if(path==="/api/login/mfa"&&method==="POST"){
+  const v=await readJson(request);
+  const challenge=clean(v.challenge,100).toLowerCase(),code=typeof v.code==="string"?v.code.trim():"";
+  if(!inviteTokenOk(challenge)||!/^\d{6}$/.test(code))return error("Invalid authenticator verification",403);
+  const tokenHash=await hash(challenge),t=now();
+  const row=await first(db,`SELECT c.user_id,m.secret_cipher_hex,m.secret_iv_hex,m.last_used_step,u.disabled_at
+   FROM mfa_login_challenges c JOIN user_mfa m ON m.user_id=c.user_id
+   JOIN users u ON u.id=c.user_id
+   WHERE c.token_hash=? AND c.expires_at>? AND m.enabled_at IS NOT NULL`,tokenHash,t);
+  if(!row||row.disabled_at!==null)return error("Authenticator challenge expired or invalid",403);
+  const rateKey=await hash("mfa-login|"+row.user_id+"|"+(request.headers.get("CF-Connecting-IP")||"unknown"));
+  if(await throttled(db,rateKey))return error("Too many authenticator attempts. Try again later.",429);
+  const step=await verifyOtp(await openMfa(env,row.user_id,row),code,row.last_used_step);
+  if(step===null){await badLogin(db,rateKey);return error("Incorrect or already-used authenticator code",403)}
+  const results=await db.batch([
+   db.prepare("UPDATE user_mfa SET last_used_step=? WHERE user_id=? AND enabled_at IS NOT NULL AND last_used_step<?")
+    .bind(step,row.user_id,step),
+   db.prepare("DELETE FROM mfa_login_challenges WHERE token_hash=? AND user_id=? AND expires_at>?")
+    .bind(tokenHash,row.user_id,t)
+  ]);
+  if(results[0]?.meta?.changes!==1||results[1]?.meta?.changes!==1)return error("Authenticator code already used",403);
+  await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
+  const session=await issue(db,row.user_id);
+  return response({ok:true,csrf:session.csrf},200,{"Set-Cookie":setCookie(session.token)});
  }
  if(path==="/api/invitations/preview"&&method==="POST"){
   const v=await readJson(request),token=clean(v.token,128).toLowerCase();
