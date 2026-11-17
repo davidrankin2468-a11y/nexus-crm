@@ -108,3 +108,19 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
  .hero h1{font-size:36px}
  .stat strong{font-size:17px}
 }
+
+
+/* Safari/iOS and Android browser compatibility */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+button,a,[role="button"],summary{-webkit-tap-highlight-color:rgba(183,245,130,.18);touch-action:manipulation}
+body{padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)}
+@supports(height:100dvh){.simple-page{min-height:58dvh}}
+@media(max-width:760px){
+ .header.has-mobile-menu{
+  padding-left:max(15px,env(safe-area-inset-left,0px));
+  padding-right:max(15px,env(safe-area-inset-right,0px));
+ }
+ .hero .proof{overflow-wrap:anywhere}
+ .interest-card input:not([type="checkbox"]),.interest-card select,.interest-card textarea,
+ .withdraw-card input{font-size:16px}
+}
