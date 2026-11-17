@@ -7,6 +7,7 @@ on:
       - "cloud-app/schema.sql"
       - "cloud-app/migrations/**"
       - "cloud-app/tests/**"
+      - "cloud-app/public/**"
       - ".github/workflows/crm-security.yml"
   workflow_dispatch:
 permissions:
@@ -20,5 +21,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Check frontend JavaScript syntax
+        run: node --check cloud-app/public/assets/app.js
+      - name: Check API JavaScript syntax
+        run: node --check "cloud-app/functions/api/[[path]].js"
       - name: Run isolated API and security tests (no live data)
         run: node --test cloud-app/tests/security.test.mjs
