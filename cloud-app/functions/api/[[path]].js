@@ -29,7 +29,7 @@ async function readJson(req) {
 }
 async function current(req,db){
  const token=fromCookie(req);if(!token)return null;
- return first(db,"SELECT s.token_hash,s.csrf_token,u.id AS user_id,u.tenant_id,u.role,u.email,t.name AS company FROM sessions s JOIN users u ON u.id=s.user_id JOIN tenants t ON t.id=u.tenant_id WHERE s.token_hash=? AND s.expires_at>?",await hash(token),now());
+ return first(db,"SELECT s.token_hash,s.csrf_token,u.id AS user_id,u.tenant_id,u.role,u.email,t.name AS company FROM sessions s JOIN users u ON u.id=s.user_id JOIN tenants t ON t.id=u.tenant_id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled_at IS NULL",await hash(token),now());
 }
 async function issue(db,userId){
  const token=secret(),csrf=secret();
@@ -246,9 +246,9 @@ async function handler(request,env){
   if(!emailOk(email)||password.length>128)return error("Invalid email or password",401);
   const rateKey=await hash(email+"|"+(request.headers.get("CF-Connecting-IP")||"unknown"));
   if(await throttled(db,rateKey))return error("Too many attempts. Try again in 15 minutes",429);
-  const u=await first(db,"SELECT id,password_hash,salt,iterations FROM users WHERE email=?",email);
+  const u=await first(db,"SELECT id,password_hash,salt,iterations,disabled_at FROM users WHERE email=?",email);
   const candidate=await passwordHash(password,u?.salt||"4aaf994521f56bead3aa815d0a3379cc",u?.iterations||ITERS);
-  if(!u||!same(candidate,u.password_hash)){await badLogin(db,rateKey);return error("Invalid email or password",401)}
+  if(!u||u.disabled_at!==null||!same(candidate,u.password_hash)){await badLogin(db,rateKey);return error("Invalid email or password",401)}
   await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
   const s=await issue(db,u.id);
   return response({ok:true,csrf:s.csrf},200,{"Set-Cookie":setCookie(s.token)});
@@ -705,9 +705,31 @@ async function handler(request,env){
   if(user.role!=="owner")return error("Only company owners can manage staff access",403);
  }
  if(path==="/api/staff/users"&&method==="GET"){
-  const items=await all(db,`SELECT id,email,role,created_at AS createdAt FROM users
+  const items=await all(db,`SELECT id,email,role,created_at AS createdAt,disabled_at AS disabledAt FROM users
     WHERE tenant_id=? ORDER BY created_at ASC LIMIT 100`,user.tenant_id);
   return response({items});
+ }
+ if(/^\/api\/staff\/users\/[a-z0-9-]{36}\/(disable|enable)$/.test(path)&&method==="POST"){
+  const match=path.match(/^\/api\/staff\/users\/([a-z0-9-]{36})\/(disable|enable)$/);
+  const id=match[1],action=match[2],v=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect owner password",403);
+  const target=await first(db,"SELECT id,role,disabled_at AS disabledAt FROM users WHERE id=? AND tenant_id=? AND role IN ('admin','employee')",id,user.tenant_id);
+  if(!target)return error("Staff account not found",404);
+  if(action==="disable"){
+   if(target.disabledAt!==null)return error("Staff account is already disabled",409);
+   const update=await db.batch([
+    db.prepare("UPDATE users SET disabled_at=? WHERE id=? AND tenant_id=? AND role IN ('admin','employee') AND disabled_at IS NULL")
+     .bind(now(),id,user.tenant_id),
+    db.prepare("DELETE FROM sessions WHERE user_id=?").bind(id)
+   ]);
+   if(update[0]?.meta?.changes!==1)return error("Staff account could not be disabled",409);
+   return response({ok:true,disabled:true,revokedSessions:update[1]?.meta?.changes||0});
+  }
+  if(target.disabledAt===null)return error("Staff account is already active",409);
+  const update=await db.prepare("UPDATE users SET disabled_at=NULL WHERE id=? AND tenant_id=? AND role IN ('admin','employee') AND disabled_at IS NOT NULL")
+   .bind(id,user.tenant_id).run();
+  if(update.meta?.changes!==1)return error("Staff account could not be enabled",409);
+  return response({ok:true,disabled:false});
  }
  if(path==="/api/staff/invitations"&&method==="GET"){
   const items=await all(db,`SELECT id,email,role,created_at AS createdAt,expires_at AS expiresAt,redeemed_at AS redeemedAt,revoked_at AS revokedAt
