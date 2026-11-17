@@ -280,6 +280,7 @@ async function handler(request,env){
   ]);
   if(rs.some(x=>x.meta?.changes!==1))throw new Error("Invitation redemption did not complete");
   const session=await issue(db,newUserId);
+  await logAudit(db,{tenant_id:invite.id,user_id:newUserId},"/api/invitations/accept","POST");
   return response({ok:true,company:invite.company_name,email:invite.owner_email,csrf:session.csrf},201,{"Set-Cookie":setCookie(session.token)});
  }
  const user=await current(request,db);
