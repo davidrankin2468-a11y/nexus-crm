@@ -18,3 +18,18 @@
 - First phase supports secure setup, login/logout, dashboard, customers and jobs; Finance, personnel, offline sync and backup restore remain intentionally inactive.
 
 **Important:** Do not import real customer information or activate commercial use until an independent security review, MFA/recovery, structured backup/restore and tenant isolation testing are complete. The prior local Windows CRM is unaffected. The public browser demo remains a separate experience.
+
+## Update: Cloud Operations (November 16, 2026)
+
+The first account and cloud test customer/job records have been preserved. The following additional features were deployed to the same secure site:
+
+- Employee directory: add, edit, mark active/inactive, role, phone, email.
+- Job appointments: schedule or edit date/time, job, assigned employee, location and notes.
+- Operations now contains Jobs, Schedule, Employees subtabs within the five top-level tabs.
+- Dashboard includes employee and appointment counts.
+- Database migration: `migrations/002_employees_appointments.sql`. This is additive; it does not modify customer/job data.
+- Every new API query is tenant-scoped, and write requests require a valid login plus same-origin CSRF verification.
+
+Verification: Cloudflare Pages deployment succeeded; schema and foreign-key insert plans were validated without writing test records; the existing customer/job counts remained unchanged. Anonymous requests for the employee API return 401. Full authenticated mobile interaction testing must still be performed by a signed-in user.
+
+Finance, automated backup/restore, MFA, staff login/invitations, and robust offline sync remain future milestones. This is still an alpha, so continue using test records only.
