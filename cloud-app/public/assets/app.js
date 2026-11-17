@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -50,6 +50,7 @@ function authScreen(mode){
  '<label>Password<input name="password" type="password" required '+(setup?'minlength="12" autocomplete="new-password"':'autocomplete="current-password"')+'></label>'+
  '<div class="hint">'+(setup?"The setup code is valid for one registration. Choose a strong unique password and keep it private.":"Your session is protected by a secure HTTP-only cookie. Never share your password.")+'</div>'+
  '<button class="primary" type="submit">'+(setup?"Create administrator account":"Sign in")+'</button></form>'+
+ (!setup?'<p><button type="button" data-action="recover-screen">Use a saved recovery code</button></p>':"")+
  '<p class="muted" style="font-size:12px">Security alpha: company invitations are available for controlled testing. MFA, verified email delivery and complete production backups are not ready. Use fictional records only.</p></div>';
 }
 
@@ -85,6 +86,19 @@ async function invitationScreen(){
   authScreen("login");
   notice("This company invitation is invalid, expired or already used. Ask the Nexus owner for a new link.");
  }
+}
+function recoveryScreen(){
+ s.account=null;s.csrf="";
+ $("mount").innerHTML='<div class="auth"><h1>Recover your Nexus CRM account</h1>'+
+  '<p>Use a saved, one-time recovery code from your account settings. Codes must be generated before you lose access. We do not send codes by email.</p>'+
+  '<form data-form="recover">'+
+  '<label>Account email<input type="email" name="email" required autocomplete="username"></label>'+
+  '<label>Saved recovery code<input type="text" name="code" required minlength="32" maxlength="32" autocapitalize="off" autocomplete="off" spellcheck="false"></label>'+
+  '<label>New password (14 characters minimum)<input type="password" name="newPassword" minlength="14" maxlength="128" required autocomplete="new-password"></label>'+
+  '<label>Repeat new password<input type="password" name="confirmPassword" minlength="14" maxlength="128" required autocomplete="new-password"></label>'+
+  '<button class="primary" type="submit">Reset my password</button>'+
+  '<button type="button" data-action="return-login">Back to sign in</button></form>'+
+  '<p class="muted">If you have no saved recovery code, contact the Nexus operator. An automated identity-verification process has not been enabled.</p></div>';
 }
 async function staffInvitationScreen(){
  if(!s.pendingStaffToken){authScreen("login");return}
@@ -373,6 +387,27 @@ function companyAccessContent(){
   panel("Separate company workspaces",table(["Company","Owner account","Users","Customers","Jobs"],companies));
 }
 
+function accountSecurityContent(){
+ const generated=s.newRecoveryCodes;
+ const issued=generated?panel("Save your recovery codes now",
+  '<p><strong>Each code works one time.</strong> These eight codes are shown only now. Save them in a private password manager or secure offline location. Creating new codes cancels old ones.</p>'+
+  '<label>Recovery codes<textarea readonly rows="11" aria-label="New account recovery codes">'+safe(generated.join("\n"))+'</textarea></label>'+
+  '<div class="actionrow"><button type="button" class="primary" data-action="copy-recovery">Copy recovery codes</button>'+
+  '<button type="button" data-action="hide-recovery">Hide codes</button></div>'):"";
+ return panel("Change your account password",
+  '<p>Changing your password signs out other devices.</p>'+
+  '<form data-form="change-password">'+
+  '<label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required></label>'+
+  '<label>New password<input name="newPassword" type="password" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
+  '<label>Confirm password<input name="confirmPassword" type="password" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
+  '<button type="submit" class="primary">Change password</button></form>')+
+  panel("Offline recovery codes",
+  '<p>Generate eight single-use recovery codes. This is a free pilot recovery option that works without email. '+
+  'Existing codes stop working when you generate new ones. This does not provide MFA.</p>'+
+  '<form data-form="generate-recovery"><label>Confirm current password<input name="password" type="password" required autocomplete="current-password"></label>'+
+  '<button type="submit" class="primary">Generate new recovery codes</button></form>')+
+  issued;
+}
 function teamAccessContent(){
  if(s.account?.role!=="owner")return panel("Access denied","<p>Only company owners can manage team access.</p>");
  if(s.staffError)return panel("Team access unavailable",'<p>'+safe(s.staffError)+'</p><p>Refresh to retry. Your other company records are unchanged.</p>');
@@ -471,6 +506,7 @@ function managementContent(){
 
 function currentTab(){
  const d=$("view");
+ if(s.page==="Account"){d.innerHTML=accountSecurityContent();return;}
  if(s.page==="Dashboard"){
   const x=s.dashboard||{customers:0,openJobs:0,jobPipeline:0};
   d.innerHTML='<div class="cards">'+
@@ -544,9 +580,10 @@ function draw(){
  $("mount").innerHTML='<div class="layout"><aside class="sidebar"><div class="tenant">'+safe(s.account.company)+'</div>'+
  tabs.filter(t=>t!=="Management"||s.account.role==="owner").filter(t=>t!=="Finance"||s.account.role!=="employee").map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+t+'</button>').join("")+
  '</aside><main class="content"><div class="content-heading"><div><h1>'+safe(s.page)+'</h1><p>Connected company records · secure cloud alpha</p></div>'+
- '<button data-action="refresh">Refresh data</button></div><div id="view"></div></main></div>';
+ '<div class="actionrow"><button type="button" data-action="account-security">Account security</button>'+
+ '<button data-action="refresh">Refresh data</button></div></div><div id="view"></div></main></div>';
  currentTab();
- if(s.account.role==="employee"){
+ if(s.account.role==="employee"&&s.page!=="Account"){
   // Employees have read-only operational access; server RBAC enforces this as well.
   $("view").querySelectorAll('form[data-form],button[data-customer],button[data-job],button[data-employee],button[data-appointment],button[data-estimate]').forEach(el=>el.remove());
   if(s.page==="Dashboard"){
@@ -628,7 +665,17 @@ async function start(){
 }
 document.addEventListener("click",async e=>{
  const b=e.target.closest("button");if(!b)return;
- if(b.dataset.page){s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
+ if(b.dataset.action==="account-security"){s.page="Account";s.newRecoveryCodes=null;draw();notice("");return}
+ if(b.dataset.action==="recover-screen"){recoveryScreen();notice("");return}
+ if(b.dataset.action==="return-login"){authScreen("login");notice("");return}
+ if(b.dataset.action==="copy-recovery"){
+  if(!s.newRecoveryCodes)return;
+  try{await navigator.clipboard.writeText(s.newRecoveryCodes.join("\n"));notice("Recovery codes copied. Store them securely.")}
+  catch(e){notice("Select the codes above and copy them manually.");}
+  return;
+ }
+ if(b.dataset.action==="hide-recovery"){s.newRecoveryCodes=null;draw();notice("Recovery codes hidden.");return}
+ if(b.dataset.page){s.newRecoveryCodes=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
  if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
@@ -681,6 +728,17 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="recover"){
+   if(data.newPassword!==data.confirmPassword)throw Error("New passwords do not match.");
+   if(String(data.newPassword).length<14)throw Error("Use at least 14 characters for your new password.");
+   await request("/api/recover","POST",{email:data.email,code:data.code,newPassword:data.newPassword});
+   authScreen("login");notice("Password reset succeeded. Sign in with your new password.");return;
+  }
+  if(type==="generate-recovery"){
+   const result=await request("/api/security/recovery-codes","POST",{password:data.password});
+   s.newRecoveryCodes=result.codes;s.page="Account";draw();
+   notice("New codes generated. Save them now; they cannot be displayed again.");return;
+  }
   if(type==="accept-staff"){
    if(data.password!==data.confirmPassword)throw Error("Passwords do not match.");
    if(String(data.password).length<14)throw Error("Choose a password of at least 14 characters.");
