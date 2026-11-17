@@ -924,6 +924,17 @@ async function handler(request,env){
   const entitlements=await all(db,"SELECT feature_key AS featureKey,enabled FROM license_entitlements WHERE plan_code=?",license.planCode);
   return response({configured:true,license,entitlements,mode:"pilot-not-enforced"});
  }
+ if(path==="/api/platform/licenses"&&method==="GET"){
+  if(!(await platformOperator(db,user)))return error("Nexus platform operator access required",403);
+  const items=await all(db,`SELECT t.id AS tenantId,t.name AS companyName,
+    l.id AS licenseId,l.plan_code AS planCode,l.status,
+    l.period_start AS periodStart,l.period_end AS periodEnd,
+    l.grace_until AS graceUntil,l.export_until AS exportUntil
+    FROM tenants t LEFT JOIN tenant_licenses l ON l.id=(
+      SELECT x.id FROM tenant_licenses x WHERE x.tenant_id=t.id ORDER BY x.created_at DESC,x.id DESC LIMIT 1
+    ) ORDER BY t.created_at DESC LIMIT 100`);
+  return response({items,readOnly:true,commercialBillingEnabled:false});
+ }
  if(path.startsWith("/api/platform/")){
   if(!(await platformOperator(db,user)))return error("Nexus platform operator access required",403);
  }
