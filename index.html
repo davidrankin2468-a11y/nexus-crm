@@ -2,8 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Nexus CRM Demo">
+<meta name="format-detection" content="telephone=no">
 <meta name="theme-color" content="#0b1523">
+<meta name="description" content="Try Nexus CRM on iPhone, Android, or desktop. Interactive five-tab preview for fictional sample data only.">
 <title>Nexus CRM 2.4 · Interactive Preview</title>
 <style>
 :root{color-scheme:dark;--bg:#0b1523;--side:#101f31;--panel:#17283b;--line:#29465a;--muted:#a0b4c3;--green:#a3f27b;--text:#eff6f9}
@@ -100,14 +105,27 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 
+
+/* iPhone Safari support for the five-tab interactive browser demo */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+button,a,summary{-webkit-tap-highlight-color:rgba(163,242,123,.18);touch-action:manipulation}
+body{padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)}
+@media(max-width:650px){
+ aside,main{padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
+ input,select,textarea{font-size:16px}
+ .nav,.tab{min-height:44px}
+ .tablewrap{-webkit-overflow-scrolling:touch}
+}
+
 </style>
+<!-- Browser-based, compatible with current Safari on iPhone and Chrome on Android; no native app required. -->
 <!-- Cloudflare deployment initialized for Nexus CRM 2.4 -->
 </head>
 <body>
 <div class="app">
 <aside><div class="brand">◈ NEXUS <span>CRM</span></div><div class="navbox" id="nav" role="navigation" aria-label="CRM main tabs"></div><div class="sidebar-foot">Nexus Software Solutions<br>Version 2.4 · Live Design Preview</div></aside>
 <main><div class="top"><div><div class="eyebrow">Nexus Business Suite</div><h1 id="heading">Dashboard</h1><p class="muted" id="intro">Manage your business in one place</p></div><span class="tag">● Interactive browser preview · v2.4</span></div>
-<div class="alert">PUBLIC DEMO — Use fictional information only. Changes are saved in this browser, not in a shared cloud account. <a href="https://nexus-crm-showcase.pages.dev/" target="_blank" rel="noopener noreferrer">Explore the product website and request early access ↗</a></div>
+<div class="alert">PUBLIC DEMO · iPhone &amp; Android compatible — Use fictional information only. Changes are saved in this browser, not in a shared cloud account. <a href="https://nexus-crm-showcase.pages.dev/" target="_blank" rel="noopener noreferrer">Explore the product website and request early access ↗</a></div>
 <div class="tabs" id="tabs" aria-label="Section tools"></div><div id="stage" aria-live="polite"></div>
 </main></div>
 <script>
