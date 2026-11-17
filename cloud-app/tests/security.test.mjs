@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, createHmac } from "node:crypto";
 import { onRequest } from "../functions/api/[[path]].js";
 
 // ALL data lives in an in-memory database. No live Cloudflare D1 rows,
 // production sessions, third-party APIs or secrets are used by this suite.
 const base = "https://qa.nexus.invalid";
+const TEST_MFA_MASTER_KEY="01".repeat(32); // Isolated in-memory test only; never use in Cloudflare.
 const sha256 = x => createHash("sha256").update(x).digest("hex");
 const random = () => randomBytes(32).toString("hex");
 const dir = new URL("../", import.meta.url);
@@ -15,7 +16,7 @@ const sqlRoot = readFileSync(new URL("../schema.sql",import.meta.url),"utf8");
 const migrations = [
  "002_employees_appointments.sql","003_finance.sql","004_recovery_audit.sql",
  "005_platform_operator.sql","006_company_invitations.sql","007_staff_invitations.sql",
- "008_account_recovery_codes.sql","009_staff_deactivation.sql"
+ "008_account_recovery_codes.sql","009_staff_deactivation.sql","010_totp_mfa.sql"
 ];
 function memoryDB(){
  const raw = new DatabaseSync(":memory:");
@@ -64,7 +65,7 @@ async function call(db,session,method,path,data,options={}){
  if(session?.cookie&&!options.noCookie)h.set("Cookie",session.cookie);
  if(session?.csrf&&!options.noCsrf)h.set("X-Nexus-CSRF",session.csrf);
  const req=new Request(base+path,{method,headers:h,body:data===undefined?undefined:JSON.stringify(data)});
- const res=await onRequest({request:req,env:{DB:db}});
+ const res=await onRequest({request:req,env:{DB:db,MFA_MASTER_KEY:TEST_MFA_MASTER_KEY}});
  let json;
  try{json=await res.json()}catch{json={error:"Non-JSON API response"}}
  const cookie=res.headers.get("set-cookie");
@@ -79,6 +80,19 @@ async function expectStatus(db,session,method,path,data,status,options={}){
  const r=await call(db,session,method,path,data,options);
  assert.equal(r.status,status,method+" "+path+": "+JSON.stringify(r.json));
  return r.json;
+}
+function totp(encoded,step){
+ const abc="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+ let bits=0,value=0,arr=[];
+ for(const char of encoded){
+  value=(value<<5)|abc.indexOf(char);bits+=5;
+  if(bits>=8){bits-=8;arr.push((value>>>bits)&255);}
+ }
+ const msg=Buffer.alloc(8);msg.writeBigUInt64BE(BigInt(step));
+ const digest=createHmac("sha1",Buffer.from(arr)).update(msg).digest();
+ const offset=digest[19]&15;
+ const n=(digest.readUInt32BE(offset)&0x7fffffff)%1000000;
+ return String(n).padStart(6,"0");
 }
 const passwordA="QA-Owner-Password-Alpha-2468";
 const passwordB="QA-Owner-Password-Beta-2468";
@@ -342,6 +356,47 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
   assert.ok(activity.items.length>0);
   assert.equal(db.raw.prepare("PRAGMA foreign_key_check").all().length,0);
   assert.equal(db.raw.prepare("PRAGMA quick_check").get().quick_check,"ok");
+ });
+ await t.test("authenticator MFA: enrollment, challenge, replay, expiry, disable and recovery",async()=>{
+  const before=await expectStatus(db,a,"GET","/api/security/mfa/status",undefined,200);
+  assert.equal(before.available,true);
+  assert.equal(before.enabled,false);
+  await expectStatus(db,a,"POST","/api/security/mfa/start",{password:"wrong password"},403);
+  const seed=await expectStatus(db,a,"POST","/api/security/mfa/start",{password:passwordA},201);
+  assert.match(seed.secret,/^[A-Z2-7]{32}$/);
+  assert.ok(seed.otpauthUrl.startsWith("otpauth://totp/"));
+  const account=db.raw.prepare("SELECT user_id,secret_cipher_hex FROM user_mfa").get();
+  assert.equal(account.secret_cipher_hex.length,72);
+  assert.equal(account.secret_cipher_hex.includes(seed.secret),false);
+  const initial=Math.floor(Date.now()/30000);
+  await expectStatus(db,a,"POST","/api/security/mfa/confirm",{code:"0000000"},403);
+  await expectStatus(db,a,"POST","/api/security/mfa/confirm",{code:totp(seed.secret,initial-1)},200);
+  const enabled=await expectStatus(db,a,"GET","/api/security/mfa/status",undefined,200);
+  assert.equal(enabled.enabled,true);
+  const newLogin=client();
+  const challenge=await expectStatus(db,newLogin,"POST","/api/login",{email:emailA,password:passwordA},200);
+  assert.equal(challenge.mfaRequired,true);
+  assert.equal(newLogin.cookie,"","Password must not issue authenticated cookie when MFA is enabled");
+  await expectStatus(db,newLogin,"POST","/api/login/mfa",{challenge:challenge.challenge,code:"000000"},403);
+  const valid=totp(seed.secret,Math.floor(Date.now()/30000));
+  await expectStatus(db,newLogin,"POST","/api/login/mfa",{challenge:challenge.challenge,code:valid},200);
+  assert.ok(newLogin.cookie,"Valid authenticator code must issue a session");
+  await expectStatus(db,newLogin,"GET","/api/me",undefined,200);
+  await expectStatus(db,null,"POST","/api/login/mfa",{challenge:challenge.challenge,code:valid},403);
+  const expires=await expectStatus(db,null,"POST","/api/login",{email:emailA,password:passwordA},200);
+  assert.equal(expires.mfaRequired,true);
+  const accountStep=db.raw.prepare("SELECT last_used_step FROM user_mfa").get().last_used_step;
+  assert.ok(accountStep>=initial);
+  db.raw.prepare("UPDATE mfa_login_challenges SET created_at=?,expires_at=? WHERE token_hash=?")
+    .run(Math.floor(Date.now()/1000)-400,Math.floor(Date.now()/1000)-100,sha256(expires.challenge));
+  await expectStatus(db,null,"POST","/api/login/mfa",{challenge:expires.challenge,code:totp(seed.secret,Math.floor(Date.now()/30000)+1)},403);
+  await expectStatus(db,a,"POST","/api/security/mfa/disable",{password:"wrong",code:"000000"},403);
+  await expectStatus(db,a,"POST","/api/security/mfa/disable",{
+   password:passwordA,code:totp(seed.secret,Math.floor(Date.now()/30000)+1)
+  },200);
+  assert.equal((await expectStatus(db,a,"GET","/api/security/mfa/status",undefined,200)).enabled,false);
+  const simple=await expectStatus(db,null,"POST","/api/login",{email:emailA,password:passwordA},200);
+  assert.equal(simple.mfaRequired,undefined,"MFA-disabled users sign in normally");
  });
  console.log("All isolated QA scenarios finished. No production database used.");
 });
