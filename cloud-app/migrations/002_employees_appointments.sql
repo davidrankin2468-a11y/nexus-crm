@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS employees (
   UNIQUE(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS idx_employees_tenant ON employees(tenant_id,created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_tenant_id ON jobs(tenant_id,id);
 CREATE TABLE IF NOT EXISTS appointments (
   id TEXT NOT NULL PRIMARY KEY,
   tenant_id TEXT NOT NULL REFERENCES tenants(id),
