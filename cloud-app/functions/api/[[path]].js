@@ -492,13 +492,38 @@ async function handler(request,env){
   const result=await db.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").bind(user.user_id,user.token_hash).run();
   return response({ok:true,otherSessionsRevoked:result.meta?.changes||0});
  }
+ // Sales interest entries are in a separate D1 database and require company-owner authentication.
+ if(path.startsWith("/api/sales/")){
+  if(user.role!=="owner")return error("Owner account required",403);
+  if(!env.LEADS)return error("Sales inquiry database is not connected",503);
+ }
+ if(path==="/api/sales/leads"&&method==="GET"){
+  const items=(await env.LEADS.prepare("SELECT id,email,company,industry,interest_note AS interestNote,status,created_at AS createdAt,updated_at AS updatedAt FROM inquiries ORDER BY created_at DESC LIMIT 300").all()).results||[];
+  const count=await env.LEADS.prepare("SELECT COUNT(*) AS total,SUM(CASE WHEN status='New' THEN 1 ELSE 0 END) AS newCount FROM inquiries").first();
+  return response({items,total:count?.total||0,newCount:count?.newCount||0});
+ }
+ if(path.startsWith("/api/sales/leads/")&&method==="PATCH"){
+  const id=decodeURIComponent(path.slice("/api/sales/leads/".length)),v=await readJson(request);
+  if(!["New","Contacted","Closed"].includes(v.status))return error("Invalid lead status",400);
+  const result=await env.LEADS.prepare("UPDATE inquiries SET status=?,updated_at=? WHERE id=?").bind(v.status,now(),id).run();
+  if(result.meta?.changes!==1)return error("Inquiry not found",404);
+  return response({ok:true});
+ }
+ if(path.startsWith("/api/sales/leads/")&&path.endsWith("/delete")&&method==="POST"){
+  const id=decodeURIComponent(path.slice("/api/sales/leads/".length,-"/delete".length));
+  const v=await readJson(request);
+  if(v.confirm!=="DELETE INQUIRY")return error("Type DELETE INQUIRY to confirm",400);
+  const result=await env.LEADS.prepare("DELETE FROM inquiries WHERE id=?").bind(id).run();
+  if(result.meta?.changes!==1)return error("Inquiry not found",404);
+  return response({ok:true});
+ }
  return error("Not found",404);
 }
 export async function onRequest({request,env}){
  try{
   const result=await handler(request,env);
   if(request.method!=="GET"&&result.status>=200&&result.status<300&&
-   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security)(\/|$)/.test(new URL(request.url).pathname)){
+   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security|sales)(\/|$)/.test(new URL(request.url).pathname)){
    const user=await current(request,env.DB).catch(()=>null);
    if(user)await logAudit(env.DB,user,new URL(request.url).pathname,request.method);
   }
