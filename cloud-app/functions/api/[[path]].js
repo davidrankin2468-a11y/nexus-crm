@@ -59,6 +59,22 @@ function checkJob(v){
  if(x.scheduledDate&&!/^\d{4}-\d{2}-\d{2}$/.test(x.scheduledDate))throw new Error("Invalid date");
  x.amountCents=Math.round(amount*100);return x;
 }
+function checkEmployee(o){
+ const x={name:clean(o.name,150),jobTitle:clean(o.jobTitle,120),email:clean(o.email,200),phone:clean(o.phone,80),status:clean(o.status||"Active",15)};
+ if(!x.name)throw new Error("Employee name is required");
+ if(x.email&&!emailOk(x.email))throw new Error("Invalid employee email");
+ if(!["Active","Inactive"].includes(x.status))throw new Error("Invalid employee status");
+ return x;
+}
+function checkAppointment(o){
+ const x={jobId:clean(o.jobId,100),employeeId:clean(o.employeeId,100),appointmentDate:clean(o.appointmentDate,10),appointmentTime:clean(o.appointmentTime,5),location:clean(o.location,250),notes:clean(o.notes,1000)};
+ if(!x.jobId)throw new Error("Choose a job");
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(x.appointmentDate))throw new Error("Enter a valid appointment date");
+ const d=new Date(x.appointmentDate+"T12:00:00Z");
+ if(!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==x.appointmentDate)throw new Error("Enter a valid appointment date");
+ if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(x.appointmentTime))throw new Error("Enter a valid appointment time");
+ return x;
+}
 async function handler(request,env){
  const db=env.DB,method=request.method.toUpperCase(),path=new URL(request.url).pathname.replace(/\/+$/,"");
  if(!db)return error("Cloud database not configured",503);
@@ -145,12 +161,65 @@ async function handler(request,env){
   await db.prepare("UPDATE jobs SET title=?,status=?,customer_id=?,amount_cents=?,scheduled_date=?,updated_at=? WHERE id=? AND tenant_id=?").bind(x.title,x.status,x.customerId,x.amountCents,x.scheduledDate,now(),id,user.tenant_id).run();
   return response({ok:true});
  }
+ if(path==="/api/employees"&&method==="GET"){
+  return response({items:await all(db,"SELECT id,name,job_title AS jobTitle,email,phone,status,created_at AS createdAt FROM employees WHERE tenant_id=? ORDER BY created_at DESC LIMIT 500",user.tenant_id)});
+ }
+ if(path==="/api/employees"&&method==="POST"){
+  const x=checkEmployee(await readJson(request)),id=crypto.randomUUID(),t=now();
+  await db.prepare("INSERT INTO employees(id,tenant_id,name,job_title,email,phone,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
+    .bind(id,user.tenant_id,x.name,x.jobTitle,x.email,x.phone,x.status,t,t).run();
+  return response({ok:true,id},201);
+ }
+ if(path.startsWith("/api/employees/")&&method==="PATCH"){
+  const id=decodeURIComponent(path.slice("/api/employees/".length));
+  const old=await first(db,"SELECT id,name,job_title AS jobTitle,email,phone,status FROM employees WHERE id=? AND tenant_id=?",id,user.tenant_id);
+  if(!old)return error("Employee not found",404);
+  const x=checkEmployee({...old,...await readJson(request)});
+  await db.prepare("UPDATE employees SET name=?,job_title=?,email=?,phone=?,status=?,updated_at=? WHERE id=? AND tenant_id=?")
+   .bind(x.name,x.jobTitle,x.email,x.phone,x.status,now(),id,user.tenant_id).run();
+  return response({ok:true});
+ }
+ if(path==="/api/appointments"&&method==="GET"){
+  return response({items:await all(db,`SELECT a.id,a.job_id AS jobId,a.employee_id AS employeeId,a.appointment_date AS appointmentDate,a.appointment_time AS appointmentTime,
+  a.location,a.notes,j.title AS jobTitle,COALESCE(e.name,'Unassigned') AS employeeName
+  FROM appointments a JOIN jobs j ON j.id=a.job_id AND j.tenant_id=a.tenant_id
+  LEFT JOIN employees e ON e.id=a.employee_id AND e.tenant_id=a.tenant_id
+  WHERE a.tenant_id=? ORDER BY a.appointment_date,a.appointment_time LIMIT 500`,user.tenant_id)});
+ }
+ if(path==="/api/appointments"&&method==="POST"){
+  const x=checkAppointment(await readJson(request));
+  const related=await first(db,"SELECT id FROM jobs WHERE id=? AND tenant_id=?",x.jobId,user.tenant_id);
+  if(!related)return error("Job does not belong to your company",400);
+  if(x.employeeId){
+   const member=await first(db,"SELECT id FROM employees WHERE id=? AND tenant_id=?",x.employeeId,user.tenant_id);
+   if(!member)return error("Employee does not belong to your company",400);
+  }
+  const id=crypto.randomUUID(),t=now();
+  await db.prepare("INSERT INTO appointments(id,tenant_id,job_id,employee_id,appointment_date,appointment_time,location,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+    .bind(id,user.tenant_id,x.jobId,x.employeeId||null,x.appointmentDate,x.appointmentTime,x.location,x.notes,t,t).run();
+  return response({ok:true,id},201);
+ }
+ if(path.startsWith("/api/appointments/")&&method==="PATCH"){
+  const id=decodeURIComponent(path.slice("/api/appointments/".length));
+  const old=await first(db,"SELECT id,job_id AS jobId,employee_id AS employeeId,appointment_date AS appointmentDate,appointment_time AS appointmentTime,location,notes FROM appointments WHERE id=? AND tenant_id=?",id,user.tenant_id);
+  if(!old)return error("Appointment not found",404);
+  const x=checkAppointment({...old,...await readJson(request)});
+  const related=await first(db,"SELECT id FROM jobs WHERE id=? AND tenant_id=?",x.jobId,user.tenant_id);
+  if(!related)return error("Job does not belong to your company",400);
+  if(x.employeeId){
+   const member=await first(db,"SELECT id FROM employees WHERE id=? AND tenant_id=?",x.employeeId,user.tenant_id);
+   if(!member)return error("Employee does not belong to your company",400);
+  }
+  await db.prepare("UPDATE appointments SET job_id=?,employee_id=?,appointment_date=?,appointment_time=?,location=?,notes=?,updated_at=? WHERE id=? AND tenant_id=?")
+    .bind(x.jobId,x.employeeId||null,x.appointmentDate,x.appointmentTime,x.location,x.notes,now(),id,user.tenant_id).run();
+  return response({ok:true});
+ }
  return error("Not found",404);
 }
 export async function onRequest({request,env}){
  try{return await handler(request,env)}
  catch(e){
-  if(/^(JSON body required|Request too large|Invalid JSON|JSON object required|Customer name is required|Invalid customer email|Job requires|Invalid job status|Invalid job amount|Invalid date)/.test(e?.message||""))return error(e.message);
+  if(/^(JSON body required|Request too large|Invalid JSON|JSON object required|Customer name is required|Invalid customer email|Job requires|Invalid job status|Invalid job amount|Invalid date|Employee name is required|Invalid employee email|Invalid employee status|Choose a job|Enter a valid appointment date|Enter a valid appointment time)/.test(e?.message||""))return error(e.message);
   console.error("Nexus CRM error:",String(e?.message||e).slice(0,240));
   return error("Service error; please try again",500);
  }
