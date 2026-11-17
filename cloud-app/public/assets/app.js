@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:""};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -12,6 +12,12 @@ try{
  if(/^[a-f0-9]{64}$/i.test(fragment)){
   s.pendingInviteToken=fragment.toLowerCase();
   history.replaceState(null,"",location.pathname+location.search);
+ }else{
+  const staff=new URLSearchParams(location.hash.slice(1)).get("staff")||"";
+  if(/^[a-f0-9]{64}$/i.test(staff)){
+   s.pendingStaffToken=staff.toLowerCase();
+   history.replaceState(null,"",location.pathname+location.search);
+  }
  }
 }catch(e){/* Standard login remains available if URL hash is unsupported. */}
 async function request(path,method="GET",data=null){
@@ -78,6 +84,36 @@ async function invitationScreen(){
   s.pendingInviteToken="";
   authScreen("login");
   notice("This company invitation is invalid, expired or already used. Ask the Nexus owner for a new link.");
+ }
+}
+async function staffInvitationScreen(){
+ if(!s.pendingStaffToken){authScreen("login");return}
+ s.account=null;s.csrf="";
+ try{
+  const me=await request("/api/me").catch(()=>null);
+  if(me?.user){
+   $("mount").innerHTML='<div class="auth"><h1>Open a private window</h1>'+
+    '<p>You are already signed in to <strong>'+safe(me.user.company)+'</strong> as '+safe(me.user.email)+'.</p>'+
+    '<div class="hint">To preserve your current session, open this staff invitation in a private/incognito browser window or another device.</div>'+
+    '<button type="button" data-action="cancel-invite">Return to your current account</button></div>';
+   return;
+  }
+  const i=await request("/api/staff/invitations/preview","POST",{token:s.pendingStaffToken});
+  $("mount").innerHTML='<div class="auth"><h1>Accept staff access</h1>'+
+   '<p>Join an existing company workspace in a <strong>'+safe(i.role)+'</strong> role.</p>'+
+   '<div class="hint"><strong>Company:</strong> '+safe(i.companyName)+
+   '<p><strong>Invited email:</strong> '+safe(i.email)+'</p>'+
+   '<p><strong>Role:</strong> '+safe(i.role)+'</p>'+
+   '<p><strong>Expires:</strong> '+safe(new Date(i.expiresAt*1000).toLocaleString())+'</p></div>'+
+   '<form data-form="accept-staff">'+
+   '<label>Create a password (14–128 characters)<input name="password" type="password" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
+   '<label>Confirm password<input name="confirmPassword" type="password" minlength="14" maxlength="128" autocomplete="new-password" required></label>'+
+   '<button type="submit" class="primary">Activate staff test account</button>'+
+   '<button type="button" data-action="cancel-invite">Cancel</button></form>'+
+   '<p class="muted">Pilot only. Email verification, MFA and secure recovery are not ready. Use fictional company records.</p></div>';
+ }catch(e){
+  s.pendingStaffToken="";authScreen("login");
+  notice("That staff invitation is invalid, expired, or already used.");
  }
 }
 function statusBadge(v){return '<span class="tag">'+safe(v)+'</span>'}
@@ -210,7 +246,7 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
-const managementTabs=["Backups","Security","Sales Leads","Companies"];
+const managementTabs=["Backups","Security","Sales Leads","Companies","Team Access"];
 function describeBackupCounts(counts){
  const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
  return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
@@ -337,12 +373,48 @@ function companyAccessContent(){
   panel("Separate company workspaces",table(["Company","Owner account","Users","Customers","Jobs"],companies));
 }
 
+function teamAccessContent(){
+ if(s.account?.role!=="owner")return panel("Access denied","<p>Only company owners can manage team access.</p>");
+ if(s.staffError)return panel("Team access unavailable",'<p>'+safe(s.staffError)+'</p><p>Refresh to retry. Your other company records are unchanged.</p>');
+ const link=s.newStaffInvite?location.origin+"/#staff="+s.newStaffInvite.token:"";
+ const minted=s.newStaffInvite?panel("Copy this one-time staff link",
+  '<p><strong>'+safe(s.newStaffInvite.email)+'</strong> · '+safe(s.newStaffInvite.role)+'</p>'+
+  '<p>Private pilot invitation. The link works once, expires in three days, and is not sent by Nexus CRM.</p>'+
+  '<label>Staff invitation link<input readonly type="text" value="'+safe(link)+'" aria-label="New staff invite link"></label>'+
+  '<div class="actionrow"><button type="button" class="primary" data-action="copy-staff-invite">Copy invitation</button>'+
+  '<button type="button" data-action="clear-staff-invite">Hide link</button></div>'):"";
+ const users=s.staffUsers.map(x=>'<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td>'+
+  '<td>'+safe(new Date(x.createdAt*1000).toLocaleDateString())+'</td></tr>');
+ const invites=s.staffInvites.map(x=>{
+  const status=x.redeemedAt?"Accepted":x.revokedAt?"Revoked":x.expiresAt<=Math.floor(Date.now()/1000)?"Expired":"Pending";
+  const cancel=status==="Pending"?
+   '<form data-form="revoke-staff" class="actionrow"><input type="hidden" name="id" value="'+safe(x.id)+'">'+
+   '<label>Owner password<input name="password" type="password" required autocomplete="current-password"></label>'+
+   '<button type="submit">Revoke</button></form>':"";
+  return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td><td>'+safe(status)+'</td><td>'+cancel+'</td></tr>';
+ });
+ return panel("Invite a test team member",
+  '<p>Create a separate sign-in within your existing company. <strong>Admin</strong> can update business and Finance records; '+
+  '<strong>Employee</strong> can only read the customer, jobs, staff directory and schedule. '+
+  'Neither has company-owner security or backup access.</p>'+
+  '<div class="hint">Use an email address you control for pilot testing. Do not send invitations to real employees until email verification, MFA and security tests are completed.</div>'+
+  '<form data-form="staff-invite" class="gridform">'+
+  input("email","Staff email","","email",true)+
+  '<label>Staff role<select name="role" required><option value="employee">Employee · read-only operations</option>'+
+  '<option value="admin">Admin · edit operations and Finance</option></select></label>'+
+  '<label>Confirm your Nexus CRM password<input name="password" type="password" required autocomplete="current-password"></label>'+
+  '<div class="actionrow"><button type="submit" class="primary">Create staff invitation</button></div></form>')+
+  minted+panel("Active company accounts",table(["Email","Role","Created"],users))+
+  panel("Staff invitations",table(["Email","Role","Status","Action"],invites));
+}
+
 function managementContent(){
  const nav='<div class="actionrow">'+managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator).map(tab=>
   '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
  if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
  if(s.managementView==="Companies")return nav+companyAccessContent();
+ if(s.managementView==="Team Access")return nav+teamAccessContent();
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -470,10 +542,18 @@ function currentTab(){
 function draw(){
  if(!s.account)return;
  $("mount").innerHTML='<div class="layout"><aside class="sidebar"><div class="tenant">'+safe(s.account.company)+'</div>'+
- tabs.map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+t+'</button>').join("")+
+ tabs.filter(t=>t!=="Management"||s.account.role==="owner").filter(t=>t!=="Finance"||s.account.role!=="employee").map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+t+'</button>').join("")+
  '</aside><main class="content"><div class="content-heading"><div><h1>'+safe(s.page)+'</h1><p>Connected company records · secure cloud alpha</p></div>'+
  '<button data-action="refresh">Refresh data</button></div><div id="view"></div></main></div>';
  currentTab();
+ if(s.account.role==="employee"){
+  // Employees have read-only operational access; server RBAC enforces this as well.
+  $("view").querySelectorAll('form[data-form],button[data-customer],button[data-job],button[data-employee],button[data-appointment],button[data-estimate]').forEach(el=>el.remove());
+  if(s.page==="Dashboard"){
+   const cards=$("view").querySelectorAll(".card");
+   if(cards.length>=5)cards[4].remove();
+  }
+ }
 }
 // Fetch independent workspaces concurrently. A failure in Finance or Management
 // must not prevent the core CRM from loading.
@@ -485,8 +565,10 @@ async function refresh(){
  s.account=me.user;s.csrf=me.csrf;
  const coreLoad=Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/employees"),request("/api/appointments"),request("/api/dashboard")])
   .then(([customers,jobs,employees,appointments,dashboard])=>({customers,jobs,employees,appointments,dashboard}));
- const financeLoad=Promise.all([request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")])
-  .then(([estimates,invoices,payments,reports])=>({estimates,invoices,payments,reports}));
+ const financeLoad=s.account.role==="employee"
+  ?Promise.resolve({estimates:{items:[]},invoices:{items:[]},payments:{items:[]},reports:{totals:null}})
+  :Promise.all([request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")])
+    .then(([estimates,invoices,payments,reports])=>({estimates,invoices,payments,reports}));
  const owner=s.account.role==="owner";
  const managementLoad=owner?Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")])
   .then(([backups,summary,activity])=>({backups,summary,activity})):Promise.resolve(null);
@@ -497,7 +579,9 @@ async function refresh(){
  const companiesLoad=platform?Promise.all([
   request("/api/platform/invitations"),request("/api/platform/companies")
  ]).then(([invitations,companies])=>({invitations,companies})):Promise.resolve(null);
- const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad]);
+ const staffLoad=owner?Promise.all([request("/api/staff/users"),request("/api/staff/invitations")])
+  .then(([users,invitations])=>({users,invitations})):Promise.resolve(null);
+ const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad,staffLoad]);
  if(seq!==refreshNumber)return;
  if(outcomes[0].status==="rejected")throw outcomes[0].reason;
  const core=outcomes[0].value;
@@ -514,6 +598,10 @@ async function refresh(){
    s.backupItems=management.value.backups.items;s.securitySummary=management.value.summary;
    s.auditEvents=management.value.activity.items;s.recoveryError="";
   }else{s.recoveryError=management.reason?.message||"Unable to load recovery controls";}
+  const team=outcomes[5];
+  if(team.status==="fulfilled"){
+   s.staffUsers=team.value.users.items;s.staffInvites=team.value.invitations.items;s.staffError="";
+  }else{s.staffError=team.reason?.message||"Unable to load team access";}
   if(platform){
    const sales=outcomes[3],companyData=outcomes[4];
    if(sales.status==="fulfilled"){
@@ -530,6 +618,7 @@ async function start(){
  try{
   // Invitation owners need not wait for the public status request.
   if(s.pendingInviteToken){await invitationScreen();return}
+  if(s.pendingStaffToken){await staffInvitationScreen();return}
   const status=await request("/api/status");
   try{await refresh();notice("")}
   catch(e){if((e.message||"").includes("sign in"))authScreen(status.configured?"login":"setup");
@@ -550,9 +639,17 @@ document.addEventListener("click",async e=>{
   catch(e){notice("Select the invitation link above and copy it manually.");}
   return;
  }
+ if(b.dataset.action==="copy-staff-invite"){
+  if(!s.newStaffInvite)return;
+  const link=location.origin+"/#staff="+s.newStaffInvite.token;
+  try{await navigator.clipboard.writeText(link);notice("Staff invitation copied. Share it privately with the invited user.")}
+  catch(e){notice("Select the invitation link above and copy it manually.");}
+  return;
+ }
+ if(b.dataset.action==="clear-staff-invite"){s.newStaffInvite=null;draw();notice("Staff invite link hidden.");return}
  if(b.dataset.action==="clear-company-invite"){s.newInvite=null;draw();notice("One-time invitation link hidden.");return}
  if(b.dataset.action==="cancel-invite"){
-  s.pendingInviteToken="";
+  s.pendingInviteToken="";s.pendingStaffToken="";
   try{await refresh();notice("");}catch(e){authScreen("login");notice("");}
   return;
  }
@@ -584,6 +681,21 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="accept-staff"){
+   if(data.password!==data.confirmPassword)throw Error("Passwords do not match.");
+   if(String(data.password).length<14)throw Error("Choose a password of at least 14 characters.");
+   await request("/api/staff/invitations/accept","POST",{token:s.pendingStaffToken,password:data.password});
+   s.pendingStaffToken="";s.page="Dashboard";await refresh();notice("Test staff account activated.");return;
+  }
+  if(type==="staff-invite"){
+   const result=await request("/api/staff/invitations","POST",data);
+   await refresh();s.managementView="Team Access";s.newStaffInvite=result;draw();
+   notice("Staff invitation created. Copy the private link now; it is shown only once.");return;
+  }
+  if(type==="revoke-staff"){
+   await request("/api/staff/invitations/"+encodeURIComponent(data.id)+"/revoke","POST",{password:data.password});
+   s.newStaffInvite=null;await refresh();notice("Staff invitation revoked.");return;
+  }
   if(type==="accept-invite"){
    if(data.password!==data.confirmPassword)throw Error("Passwords do not match.");
    if(String(data.password).length<14)throw Error("Choose a password of at least 14 characters.");
