@@ -520,7 +520,7 @@ async function testSubscription(){
  const target=$("license-test-results");if(!target)return;target.textContent="Checking…";
  const features=["crm","projects","advanced_reports","automation","nexus_ai"],lines=[];
  for(const feature of features){try{const result=await request("/api/license/check?feature="+encodeURIComponent(feature));lines.push(feature+": "+(result.allowed?"ALLOWED":"DENIED")+" ("+result.reason+")")}catch(e){lines.push(feature+": ERROR ("+e.message+")")}}
- const el=$("license-test-results");if(el)el.textContent=lines.join("\\n");
+ const el=$("license-test-results");if(el)el.textContent=lines.join("\n");
 }
 function managementContent(){
  const nav=sectionNav(managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator),s.managementView,"management","Management sections");
