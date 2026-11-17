@@ -75,6 +75,38 @@ function checkAppointment(o){
  if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(x.appointmentTime))throw new Error("Enter a valid appointment time");
  return x;
 }
+// Finance values are amounts in integer cents; payments are manual bookkeeping entries only.
+const financeRoles=["owner","admin"];
+const estimateStatuses=["Draft","Sent","Accepted","Declined"];
+const paymentMethods=["Cash","Check","Bank transfer","Card (external)","Other"];
+function moneyCents(v,positive=false){
+ const number=Number(v);
+ if(v===""||v===null||v===undefined||!Number.isFinite(number)||number<0||number>1000000000||Math.abs(number*100-Math.round(number*100))>0.00001||positive&&number<=0)
+  throw new Error("Amount must be a positive number with at most two decimals"+(positive?"":" (zero allowed)"));
+ return Math.round(number*100);
+}
+function dateOnly(v,description="Date"){
+ const s=clean(v,10);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(s))throw new Error(description+" must be YYYY-MM-DD");
+ const d=new Date(s+"T12:00:00Z");
+ if(!Number.isFinite(d.getTime())||d.toISOString().slice(0,10)!==s)throw new Error("Invalid "+description.toLowerCase());
+ return s;
+}
+function documentNumber(prefix,id){return prefix+"-"+id.replace(/-/g,"").slice(0,12).toUpperCase()}
+function checkEstimate(v){
+ const x={customerId:clean(v.customerId,100),description:clean(v.description,700),status:clean(v.status||"Draft",12)};
+ if(!x.customerId||!x.description)throw new Error("Estimate requires a customer and description");
+ if(!estimateStatuses.includes(x.status))throw new Error("Invalid estimate status");
+ x.amountCents=moneyCents(v.amount);
+ return x;
+}
+function checkInvoice(v){
+ const x={customerId:clean(v.customerId,100),description:clean(v.description,700),dueDate:dateOnly(v.dueDate,"Due date")};
+ if(!x.customerId||!x.description)throw new Error("Invoice requires a customer and description");
+ x.amountCents=moneyCents(v.amount,true);
+ return x;
+}
+
 async function handler(request,env){
  const db=env.DB,method=request.method.toUpperCase(),path=new URL(request.url).pathname.replace(/\/+$/,"");
  if(!db)return error("Cloud database not configured",503);
@@ -214,12 +246,116 @@ async function handler(request,env){
     .bind(x.jobId,x.employeeId||null,x.appointmentDate,x.appointmentTime,x.location,x.notes,now(),id,user.tenant_id).run();
   return response({ok:true});
  }
+ // Finance endpoints are deliberately owner/admin-only while employee login roles are still under development.
+ if(path.startsWith("/api/estimates")||path.startsWith("/api/invoices")||path.startsWith("/api/payments")||path==="/api/reports"){
+  if(!financeRoles.includes(user.role))return error("Only company administrators can access Finance",403);
+ }
+ if(path==="/api/estimates"&&method==="GET"){
+  const items=await all(db,`SELECT e.id,e.estimate_number AS number,e.customer_id AS customerId,c.name AS customerName,
+    e.description,e.amount_cents/100.0 AS amount,e.status,e.created_at AS createdAt,
+    EXISTS(SELECT 1 FROM invoices i WHERE i.tenant_id=e.tenant_id AND i.estimate_id=e.id) AS invoiced
+   FROM estimates e JOIN customers c ON c.id=e.customer_id AND c.tenant_id=e.tenant_id
+   WHERE e.tenant_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 500`,user.tenant_id);
+  return response({items});
+ }
+ if(path==="/api/estimates"&&method==="POST"){
+  const x=checkEstimate(await readJson(request));
+  if(!(await first(db,"SELECT id FROM customers WHERE id=? AND tenant_id=?",x.customerId,user.tenant_id)))return error("Choose a customer in your company");
+  const id=crypto.randomUUID(),number=documentNumber("EST",id),t=now();
+  await db.prepare("INSERT INTO estimates(id,tenant_id,customer_id,estimate_number,description,amount_cents,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
+   .bind(id,user.tenant_id,x.customerId,number,x.description,x.amountCents,x.status,t,t).run();
+  return response({ok:true,id,number},201);
+ }
+ if(path.startsWith("/api/estimates/")&&method==="PATCH"){
+  const id=decodeURIComponent(path.slice("/api/estimates/".length));
+  const old=await first(db,"SELECT id,customer_id AS customerId,description,amount_cents/100.0 AS amount,status FROM estimates WHERE id=? AND tenant_id=?",id,user.tenant_id);
+  if(!old)return error("Estimate not found",404);
+  const o=await readJson(request),x=checkEstimate({...old,...o});
+  if(await first(db,"SELECT id FROM invoices WHERE estimate_id=? AND tenant_id=?",id,user.tenant_id))return error("This estimate has already been invoiced; it can no longer be edited",409);
+  if(!(await first(db,"SELECT id FROM customers WHERE id=? AND tenant_id=?",x.customerId,user.tenant_id)))return error("Choose a customer in your company");
+  await db.prepare("UPDATE estimates SET customer_id=?,description=?,amount_cents=?,status=?,updated_at=? WHERE id=? AND tenant_id=? AND NOT EXISTS(SELECT 1 FROM invoices i WHERE i.tenant_id=estimates.tenant_id AND i.estimate_id=estimates.id)")
+   .bind(x.customerId,x.description,x.amountCents,x.status,now(),id,user.tenant_id).run();
+  return response({ok:true});
+ }
+ if(path==="/api/invoices"&&method==="GET"){
+  const items=await all(db,`SELECT i.id,i.invoice_number AS number,i.customer_id AS customerId,c.name AS customerName,i.estimate_id AS estimateId,
+   i.description,i.amount_cents/100.0 AS amount,i.due_date AS dueDate,i.created_at AS createdAt,
+   COALESCE(p.total,0)/100.0 AS paid,
+   (i.amount_cents-COALESCE(p.total,0))/100.0 AS balance,
+   CASE WHEN COALESCE(p.total,0)>=i.amount_cents THEN 'Paid'
+        WHEN i.due_date<date('now') THEN 'Overdue'
+        WHEN COALESCE(p.total,0)>0 THEN 'Partial'
+        ELSE 'Unpaid' END AS status
+   FROM invoices i JOIN customers c ON c.id=i.customer_id AND c.tenant_id=i.tenant_id
+   LEFT JOIN (SELECT tenant_id,invoice_id,SUM(amount_cents) AS total FROM payments GROUP BY tenant_id,invoice_id) p
+    ON p.tenant_id=i.tenant_id AND p.invoice_id=i.id
+   WHERE i.tenant_id=? ORDER BY i.created_at DESC,i.id DESC LIMIT 500`,user.tenant_id);
+  return response({items});
+ }
+ if(path==="/api/invoices"&&method==="POST"){
+  const x=checkInvoice(await readJson(request));
+  if(!(await first(db,"SELECT id FROM customers WHERE id=? AND tenant_id=?",x.customerId,user.tenant_id)))return error("Choose a customer in your company");
+  const id=crypto.randomUUID(),number=documentNumber("INV",id);
+  await db.prepare("INSERT INTO invoices(id,tenant_id,customer_id,estimate_id,invoice_number,description,amount_cents,due_date,created_at) VALUES(?,?,?,NULL,?,?,?,?,?)")
+   .bind(id,user.tenant_id,x.customerId,number,x.description,x.amountCents,x.dueDate,now()).run();
+  return response({ok:true,id,number},201);
+ }
+ if(path==="/api/invoices/from-estimate"&&method==="POST"){
+  const v=await readJson(request),estimateId=clean(v.estimateId,100),dueDate=dateOnly(v.dueDate,"Due date");
+  if(!estimateId)return error("Choose an estimate");
+  const id=crypto.randomUUID(),number=documentNumber("INV",id);
+  const result=await db.prepare(`INSERT INTO invoices(id,tenant_id,customer_id,estimate_id,invoice_number,description,amount_cents,due_date,created_at)
+    SELECT ?,e.tenant_id,e.customer_id,e.id,?,e.description,e.amount_cents,?,?
+    FROM estimates e WHERE e.id=? AND e.tenant_id=? AND e.status='Accepted' AND e.amount_cents>0
+     AND NOT EXISTS(SELECT 1 FROM invoices i WHERE i.tenant_id=e.tenant_id AND i.estimate_id=e.id)`)
+   .bind(id,number,dueDate,now(),estimateId,user.tenant_id).run();
+  if(result.meta?.changes!==1)return error("Accept this estimate first, or check whether it was already invoiced",409);
+  return response({ok:true,id,number},201);
+ }
+ if(path==="/api/payments"&&method==="GET"){
+  const items=await all(db,`SELECT p.id,p.invoice_id AS invoiceId,i.invoice_number AS invoiceNumber,
+    c.name AS customerName,p.amount_cents/100.0 AS amount,p.paid_date AS paidDate,
+    p.method,p.note,p.created_at AS createdAt
+   FROM payments p JOIN invoices i ON i.id=p.invoice_id AND i.tenant_id=p.tenant_id
+   JOIN customers c ON c.id=i.customer_id AND c.tenant_id=p.tenant_id
+   WHERE p.tenant_id=? ORDER BY p.paid_date DESC,p.created_at DESC,p.id DESC LIMIT 500`,user.tenant_id);
+  return response({items});
+ }
+ if(path==="/api/payments"&&method==="POST"){
+  const v=await readJson(request);
+  const invoiceId=clean(v.invoiceId,100),amount=moneyCents(v.amount,true);
+  const paidDate=dateOnly(v.paidDate,"Payment date"),methodName=clean(v.method,30),note=clean(v.note,350);
+  if(!invoiceId)throw new Error("Choose an invoice");
+  if(!paymentMethods.includes(methodName))throw new Error("Invalid payment method");
+  const id=crypto.randomUUID();
+  // A single conditional INSERT checks the balance and writes the payment atomically.
+  const result=await db.prepare(`INSERT INTO payments(id,tenant_id,invoice_id,amount_cents,paid_date,method,note,created_at)
+   SELECT ?,i.tenant_id,i.id,?,?,?,?,? FROM invoices i
+   WHERE i.id=? AND i.tenant_id=? AND i.amount_cents >=
+     (SELECT COALESCE(SUM(p.amount_cents),0) FROM payments p WHERE p.tenant_id=i.tenant_id AND p.invoice_id=i.id) + ?`)
+   .bind(id,amount,paidDate,methodName,note,now(),invoiceId,user.tenant_id,amount).run();
+  if(result.meta?.changes!==1)return error("Invoice not found, already paid, or payment exceeds balance",409);
+  return response({ok:true,id},201);
+ }
+ if(path==="/api/reports"&&method==="GET"){
+  const totals=await first(db,`SELECT
+    (SELECT COUNT(*) FROM estimates e WHERE e.tenant_id=?) AS estimates,
+    (SELECT COUNT(*) FROM invoices i WHERE i.tenant_id=?) AS invoices,
+    (SELECT COALESCE(SUM(e.amount_cents),0) FROM estimates e WHERE e.tenant_id=? AND e.status='Accepted')/100.0 AS acceptedEstimateTotal,
+    (SELECT COALESCE(SUM(i.amount_cents),0) FROM invoices i WHERE i.tenant_id=?)/100.0 AS invoiceTotal,
+    (SELECT COALESCE(SUM(p.amount_cents),0) FROM payments p WHERE p.tenant_id=?)/100.0 AS paymentTotal,
+    (SELECT COALESCE(SUM(i.amount_cents-(SELECT COALESCE(SUM(p.amount_cents),0) FROM payments p
+      WHERE p.invoice_id=i.id AND p.tenant_id=i.tenant_id)),0)
+     FROM invoices i WHERE i.tenant_id=? AND i.due_date<date('now'))/100.0 AS overdueBalance
+    `,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id);
+  return response({totals:{...totals,outstanding:Math.round(((totals?.invoiceTotal||0)-(totals?.paymentTotal||0))*100)/100}});
+ }
  return error("Not found",404);
 }
 export async function onRequest({request,env}){
  try{return await handler(request,env)}
  catch(e){
-  if(/^(JSON body required|Request too large|Invalid JSON|JSON object required|Customer name is required|Invalid customer email|Job requires|Invalid job status|Invalid job amount|Invalid date|Employee name is required|Invalid employee email|Invalid employee status|Choose a job|Enter a valid appointment date|Enter a valid appointment time)/.test(e?.message||""))return error(e.message);
+  if(/^(JSON body required|Request too large|Invalid JSON|JSON object required|Customer name is required|Invalid customer email|Job requires|Invalid job status|Invalid job amount|Invalid date|Employee name is required|Invalid employee email|Invalid employee status|Choose a job|Enter a valid appointment date|Enter a valid appointment time|Amount must|Due date must|Invalid due date|Payment date must|Invalid payment date|Estimate requires|Invoice requires|Invalid estimate status|Choose an invoice|Invalid payment method)/.test(e?.message||""))return error(e.message);
   console.error("Nexus CRM error:",String(e?.message||e).slice(0,240));
   return error("Service error; please try again",500);
  }
