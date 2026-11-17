@@ -286,7 +286,7 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
-const managementTabs=["Backups","Security","Sales Leads","Companies","Team Access"];
+const managementTabs=["Backups","Security","Subscription & License","Sales Leads","Companies","Team Access"];
 function describeBackupCounts(counts){
  const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
  return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
@@ -501,12 +501,34 @@ function teamAccessContent(){
   panel("Invitations · "+s.staffInvites.length,table(["Email","Role","Status","Action"],invites));
 }
 
+function subscriptionContent(){
+ const x=s.licenseInfo;
+ const features=[["crm","CRM"],["projects","Projects"],["advanced_reports","Advanced reports"],["automation","Automation"],["nexus_ai","Nexus AI"]];
+ const preview={starter:["crm"],business:["crm","projects","advanced_reports","automation"],premium:["crm","projects","advanced_reports","automation","nexus_ai"]};
+ const plans=[["starter","Starter","$49/month","3 users"],["business","Business","$99/month","10 users"],["premium","Premium","$149/month","Unlimited users"]];
+ const head=!x?'<p>Loading subscription details…</p>':x.error?'<p role="alert">'+safe(x.error)+'</p>':x.configured?'<p><strong>Current plan:</strong> '+safe(x.license.planCode.toUpperCase())+' · <strong>Status:</strong> '+safe(x.license.status)+'</p><p><strong>Expires:</strong> '+safe(new Date(x.license.periodEnd*1000).toLocaleDateString())+'</p><p class="muted">Enforcement mode: '+safe(x.mode)+'. Restrictions are not yet active on existing CRM screens.</p>':'<p>No license assigned to this company yet.</p>';
+ const current=x?.configured?features.map(([key,name])=>{const e=x.entitlements.find(z=>z.featureKey===key);return '<li>'+safe(name)+': <strong>'+(e?.enabled?'Included':'Not included')+'</strong></li>'}).join(''):'';
+ return panel("Your subscription",head+(current?'<ul>'+current+'</ul>':''))+
+ panel("Compare subscription plans (preview only)",'<p>These cards show the planned subscription tiers. They do not change your plan or charge a payment.</p><div class="cards">'+plans.map(([key,name,price,seats])=>'<div class="card"><h3>'+name+'</h3><strong>'+price+'</strong><p>'+seats+'</p><ul>'+features.map(([feature,label])=>'<li>'+safe(label)+': '+(preview[key].includes(feature)?'Included':'Locked')+'</li>').join('')+'</ul></div>').join('')+'</div>')+
+ panel("Permission testing",'<p>These checks use your authenticated company session and are read-only.</p><button type="button" data-action="test-license">Run plan permission tests</button><pre id="license-test-results" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>');
+}
+async function loadSubscription(){
+ try{s.licenseInfo=await request("/api/license/me")}catch(e){s.licenseInfo={error:e.message}}
+ if(s.page==="Management"&&s.managementView==="Subscription & License")draw();
+}
+async function testSubscription(){
+ const target=$("license-test-results");if(!target)return;target.textContent="Checking…";
+ const features=["crm","projects","advanced_reports","automation","nexus_ai"],lines=[];
+ for(const feature of features){try{const result=await request("/api/license/check?feature="+encodeURIComponent(feature));lines.push(feature+": "+(result.allowed?"ALLOWED":"DENIED")+" ("+result.reason+")")}catch(e){lines.push(feature+": ERROR ("+e.message+")")}}
+ const el=$("license-test-results");if(el)el.textContent=lines.join("\\n");
+}
 function managementContent(){
  const nav=sectionNav(managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator),s.managementView,"management","Management sections");
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
  if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
  if(s.managementView==="Companies")return nav+companyAccessContent();
  if(s.managementView==="Team Access")return nav+teamAccessContent();
+ if(s.managementView==="Subscription & License")return nav+subscriptionContent();
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -732,7 +754,8 @@ document.addEventListener("click",async e=>{
  if(b.dataset.page){s.newRecoveryCodes=null;s.newMfaSecret=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
- if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;if(s.managementView==="Subscription & License")loadSubscription();s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.action==="test-license"){await testSubscription();return}
  if(b.dataset.action==="copy-company-invite"){
   if(!s.newInvite)return;
   const link=location.origin+"/#invite="+s.newInvite.token;
