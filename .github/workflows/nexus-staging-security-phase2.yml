@@ -1,0 +1,58 @@
+name: Nexus CRM staging security phase 2
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/nexus-license-manager-foundation]
+    paths:
+      - 'cloud-app/functions/api/**'
+      - '.github/workflows/nexus-staging-security-phase2.yml'
+permissions:
+  contents: read
+jobs:
+  permissions-and-tenant-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise real permission function and inspect tenant query guards
+        run: |
+          node <<'JS'
+          const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+          const src=fs.readFileSync('cloud-app/functions/api/[[path]].js','utf8');
+          const start=src.indexOf('function permitted('),end=src.indexOf('\nasync function handler(',start);
+          assert(start>=0&&end>start,'permission function missing');
+          const permitted=vm.runInNewContext(src.slice(start,end)+'; permitted');
+          const cases=[
+            ['owner','PATCH','/api/customers/test',true],
+            ['admin','GET','/api/customers',true],
+            ['admin','POST','/api/customers',true],
+            ['admin','GET','/api/license/plan-matrix',false],
+            ['employee','GET','/api/customers',true],
+            ['employee','GET','/api/jobs',true],
+            ['employee','POST','/api/customers',false],
+            ['employee','PATCH','/api/customers/test',false],
+            ['employee','GET','/api/invoices',false],
+            ['employee','GET','/api/payments',false],
+            ['employee','GET','/api/license/check',false],
+            ['invalid','GET','/api/customers',false],
+          ];
+          for(const [role,method,path,expected] of cases){
+            assert.equal(permitted(role,method,path),expected,role+' '+method+' '+path);
+          }
+          assert.match(src,/SELECT[^\n]*FROM customers WHERE tenant_id=\?/,'customer list must filter tenant');
+          assert.match(src,/WHERE id=\? AND tenant_id=\?/,'record access must filter tenant');
+          assert.match(src,/u\.tenant_id/,'session must load tenant');
+          assert.match(src,/if\(!user\)return error\("Please sign in",401\)/,'authentication boundary must remain');
+          console.log('PASS: 12 permission cases and source-level tenant guards');
+          console.log('NOTE: Not a substitute for authenticated cross-tenant HTTP tests');
+          JS
+      - name: Verify unauthenticated staging API access is denied
+        env:
+          BASE_URL: https://nexus-crm-license-staging.pages.dev
+        run: |
+          set -euo pipefail
+          for endpoint in /api/me /api/customers /api/license/check /api/security/tenant-isolation-check; do
+            status=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' "$BASE_URL$endpoint")
+            test "$status" = "401" || { echo "FAIL: $endpoint returned $status, expected 401"; exit 1; }
+            echo "PASS: unauthenticated $endpoint returns 401"
+          done
