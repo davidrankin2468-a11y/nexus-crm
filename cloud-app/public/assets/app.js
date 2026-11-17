@@ -418,8 +418,19 @@ function teamAccessContent(){
   '<label>Staff invitation link<input readonly type="text" value="'+safe(link)+'" aria-label="New staff invite link"></label>'+
   '<div class="actionrow"><button type="button" class="primary" data-action="copy-staff-invite">Copy invitation</button>'+
   '<button type="button" data-action="clear-staff-invite">Hide link</button></div>'):"";
- const users=s.staffUsers.map(x=>'<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td>'+
-  '<td>'+safe(new Date(x.createdAt*1000).toLocaleDateString())+'</td></tr>');
+ const users=s.staffUsers.map(x=>{
+  const active=x.disabledAt===null||x.disabledAt===undefined;
+  const action=x.role==="owner"?"Owner account":
+   '<form data-form="toggle-staff" class="actionrow">'+
+   '<input name="id" type="hidden" value="'+safe(x.id)+'">'+
+   '<input name="action" type="hidden" value="'+(active?"disable":"enable")+'">'+
+   '<label>Confirm owner password<input name="password" type="password" required autocomplete="current-password"></label>'+
+   '<button type="submit">'+(active?"Disable access":"Enable access")+'</button></form>';
+  return '<tr><td>'+safe(x.email)+'</td><td>'+safe(x.role)+'</td>'+
+   '<td>'+safe(active?"Active":"Disabled")+'</td>'+
+   '<td>'+safe(new Date(x.createdAt*1000).toLocaleDateString())+'</td>'+
+   '<td>'+action+'</td></tr>';
+ });
  const invites=s.staffInvites.map(x=>{
   const status=x.redeemedAt?"Accepted":x.revokedAt?"Revoked":x.expiresAt<=Math.floor(Date.now()/1000)?"Expired":"Pending";
   const cancel=status==="Pending"?
@@ -439,7 +450,7 @@ function teamAccessContent(){
   '<option value="admin">Admin · edit operations and Finance</option></select></label>'+
   '<label>Confirm your Nexus CRM password<input name="password" type="password" required autocomplete="current-password"></label>'+
   '<div class="actionrow"><button type="submit" class="primary">Create staff invitation</button></div></form>')+
-  minted+panel("Active company accounts",table(["Email","Role","Created"],users))+
+  minted+panel("Company accounts and access",table(["Email","Role","Status","Created","Access"],users))+
   panel("Staff invitations",table(["Email","Role","Status","Action"],invites));
 }
 
@@ -749,6 +760,10 @@ document.addEventListener("submit",async e=>{
    const result=await request("/api/staff/invitations","POST",data);
    await refresh();s.managementView="Team Access";s.newStaffInvite=result;draw();
    notice("Staff invitation created. Copy the private link now; it is shown only once.");return;
+  }
+  if(type==="toggle-staff"){
+   await request("/api/staff/users/"+encodeURIComponent(data.id)+"/"+data.action,"POST",{password:data.password});
+   await refresh();notice("Staff account access updated. Disabled accounts are signed out.");return;
   }
   if(type==="revoke-staff"){
    await request("/api/staff/invitations/"+encodeURIComponent(data.id)+"/revoke","POST",{password:data.password});
