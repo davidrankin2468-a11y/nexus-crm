@@ -569,9 +569,13 @@ async function handler(request,env){
     `,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id,user.tenant_id);
   return response({totals:{...totals,outstanding:Math.round(((totals?.invoiceTotal||0)-(totals?.paymentTotal||0))*100)/100}});
  }
- // Recovery and security controls are owner-only, not available to future staff login accounts.
+ // Business backups and tenant-wide security logs are owner-only. Each signed-in
+ // account may still manage its own password and one-time recovery codes.
  if(path.startsWith("/api/backups")||path.startsWith("/api/security/")){
-  if(user.role!=="owner")return error("Owner account required",403);
+  const ownCredentials=(method==="POST"&&(
+   path==="/api/security/change-password"||path==="/api/security/recovery-codes"))||
+   (method==="GET"&&path==="/api/security/recovery-count");
+  if(user.role!=="owner"&&!ownCredentials)return error("Owner account required",403);
  }
  if(path==="/api/backups"&&method==="GET"){
   const list=await all(db,"SELECT id,created_at AS createdAt,note,counts_json AS countsJson FROM backup_snapshots WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 30",user.tenant_id);
