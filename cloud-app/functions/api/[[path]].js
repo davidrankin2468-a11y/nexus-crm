@@ -265,9 +265,9 @@ async function handler(request,env){
  if(!path.startsWith("/api/"))return error("Not found",404);
  if(!["GET","POST","PATCH"].includes(method))return error("Method not allowed",405);
  if(method!=="GET"&&request.headers.get("Origin")!==new URL(request.url).origin)return error("Origin not allowed",403);
- if(path==="/api/health"&&method==="GET")return response({ok:!!(await first(db,"SELECT 1 AS ok"))?.ok,version:"3.3-alpha"});
+ if(path==="/api/health"&&method==="GET")return response({ok:!!(await first(db,"SELECT 1 AS ok"))?.ok,version:"3.4-alpha"});
  if(path==="/api/status"&&method==="GET"){
-  const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"3.3-alpha"});
+  const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"3.4-alpha"});
  }
  if(path==="/api/setup"&&method==="POST"){
   const v=await readJson(request),code=clean(v.setupCode,150),companyName=clean(v.companyName,150),email=clean(v.email,254).toLowerCase(),password=String(v.password||"");
@@ -435,7 +435,9 @@ async function handler(request,env){
     .bind(ph,salt,ITERS,account.id,account.id,codeHash),
    db.prepare("UPDATE account_recovery_codes SET used_at=? WHERE user_id=? AND code_hash=? AND used_at IS NULL")
     .bind(t,account.id,codeHash),
-   db.prepare("DELETE FROM sessions WHERE user_id=?").bind(account.id)
+   db.prepare("DELETE FROM sessions WHERE user_id=?").bind(account.id),
+   db.prepare("DELETE FROM user_mfa WHERE user_id=?").bind(account.id),
+   db.prepare("DELETE FROM mfa_login_challenges WHERE user_id=?").bind(account.id)
   ]);
   if(out[0]?.meta?.changes!==1||out[1]?.meta?.changes!==1)throw Error("Recovery was not completed");
   await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(key).run();
@@ -719,11 +721,74 @@ async function handler(request,env){
   const s=await first(db,"SELECT COUNT(*) AS count FROM sessions WHERE user_id=? AND expires_at>?",user.user_id,now());
   const b=await first(db,"SELECT COUNT(*) AS count,MAX(created_at) AS lastBackup FROM backup_snapshots WHERE tenant_id=?",user.tenant_id);
   return response({activeSessions:s?.count||0,backups:b?.count||0,lastBackupAt:b?.lastBackup||null,
-   mfaEnabled:false,independentBackupEnabled:false,d1TimeTravelDays:30,verifiedDatabaseStorage:"production"});
+   mfaEnabled:!!(await first(db,"SELECT enabled_at FROM user_mfa WHERE user_id=? AND enabled_at IS NOT NULL",user.user_id)),
+   independentBackupEnabled:false,d1TimeTravelDays:30,verifiedDatabaseStorage:"production"});
  }
  if(path==="/api/security/activity"&&method==="GET"){
   const items=await all(db,"SELECT category,action,created_at AS createdAt FROM security_audit WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.tenant_id);
   return response({items});
+ }
+ if(path==="/api/security/mfa/status"&&method==="GET"){
+  const m=await first(db,"SELECT enabled_at AS enabledAt,pending_until AS pendingUntil FROM user_mfa WHERE user_id=?",user.user_id);
+  return response({available:!!env.MFA_MASTER_KEY,enabled:!!m?.enabledAt,
+   pending:!!m?.pendingUntil&&m.pendingUntil>now()});
+ }
+ if(path==="/api/security/mfa/start"&&method==="POST"){
+  if(!env.MFA_MASTER_KEY)return error("Authenticator service not configured",503);
+  const v=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect account password",403);
+  const enrolled=await first(db,"SELECT enabled_at AS enabledAt FROM user_mfa WHERE user_id=?",user.user_id);
+  if(enrolled?.enabledAt)return error("Authenticator protection is already enabled",409);
+  const plain=crypto.getRandomValues(new Uint8Array(20)),sealed=await sealMfa(env,user.user_id,plain),t=now();
+  await db.prepare(`INSERT INTO user_mfa(user_id,secret_cipher_hex,secret_iv_hex,created_at,pending_until,enabled_at,last_used_step)
+   VALUES(?,?,?,?,?,NULL,-1) ON CONFLICT(user_id) DO UPDATE SET
+   secret_cipher_hex=excluded.secret_cipher_hex,secret_iv_hex=excluded.secret_iv_hex,
+   created_at=excluded.created_at,pending_until=excluded.pending_until,enabled_at=NULL,last_used_step=-1`)
+   .bind(user.user_id,sealed.secretCipherHex,sealed.secretIvHex,t,t+600).run();
+  const encoded=base32(plain);
+  const otpauthUrl="otpauth://totp/"+encodeURIComponent("Nexus CRM:"+user.email)+
+   "?secret="+encoded+"&issuer="+encodeURIComponent("Nexus CRM")+"&algorithm=SHA1&digits=6&period=30";
+  return response({ok:true,secret:encoded,otpauthUrl,expiresIn:600},201);
+ }
+ if(path==="/api/security/mfa/confirm"&&method==="POST"){
+  if(!env.MFA_MASTER_KEY)return error("Authenticator service unavailable",503);
+  const v=await readJson(request),code=typeof v.code==="string"?v.code.trim():"";
+  const row=await first(db,`SELECT secret_cipher_hex,secret_iv_hex,last_used_step,pending_until
+   FROM user_mfa WHERE user_id=? AND enabled_at IS NULL AND pending_until>?`,user.user_id,now());
+  if(!row)return error("Authenticator setup expired. Start again.",409);
+  const rateKey=await hash("mfa-confirm|"+user.user_id);
+  if(await throttled(db,rateKey))return error("Too many verification attempts",429);
+  const step=await verifyOtp(await openMfa(env,user.user_id,row),code,row.last_used_step);
+  if(step===null){await badLogin(db,rateKey);return error("Invalid authenticator code",403)}
+  const t=now();
+  const results=await db.batch([
+   db.prepare("UPDATE user_mfa SET enabled_at=?,pending_until=NULL,last_used_step=? WHERE user_id=? AND enabled_at IS NULL AND pending_until>?")
+    .bind(t,step,user.user_id,t),
+   db.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").bind(user.user_id,user.token_hash),
+   db.prepare("DELETE FROM mfa_login_challenges WHERE user_id=?").bind(user.user_id)
+  ]);
+  if(results[0]?.meta?.changes!==1)return error("Authenticator enrollment expired",409);
+  await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
+  return response({ok:true,enabled:true,otherSessionsRevoked:results[1]?.meta?.changes||0});
+ }
+ if(path==="/api/security/mfa/disable"&&method==="POST"){
+  if(!env.MFA_MASTER_KEY)return error("Authenticator service unavailable",503);
+  const v=await readJson(request),code=typeof v.code==="string"?v.code.trim():"";
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect account password",403);
+  const row=await first(db,`SELECT secret_cipher_hex,secret_iv_hex,last_used_step
+   FROM user_mfa WHERE user_id=? AND enabled_at IS NOT NULL`,user.user_id);
+  if(!row)return error("Authenticator protection is not enabled",409);
+  const rateKey=await hash("mfa-disable|"+user.user_id);
+  if(await throttled(db,rateKey))return error("Too many authenticator attempts",429);
+  const step=await verifyOtp(await openMfa(env,user.user_id,row),code,row.last_used_step);
+  if(step===null){await badLogin(db,rateKey);return error("Invalid authenticator code",403)}
+  await db.batch([
+   db.prepare("DELETE FROM user_mfa WHERE user_id=?").bind(user.user_id),
+   db.prepare("DELETE FROM mfa_login_challenges WHERE user_id=?").bind(user.user_id),
+   db.prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?").bind(user.user_id,user.token_hash)
+  ]);
+  await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
+  return response({ok:true,enabled:false});
  }
  if(path==="/api/security/recovery-count"&&method==="GET"){
   const row=await first(db,"SELECT COUNT(*) AS remaining FROM account_recovery_codes WHERE user_id=? AND used_at IS NULL",user.user_id);
