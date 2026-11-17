@@ -1,13 +1,33 @@
-# Nexus CRM — Live Browser Preview
+# Nexus CRM — Nexus Software Solutions
 
-**Open the current preview:** https://nexus-crm-preview.pages.dev
+Nexus CRM is a customizable five-workspace business CRM in development for landscaping, painting, construction and other field-service teams.
 
-A five-tab interactive CRM demo for Nexus Software Solutions. Updates to this public GitHub repository's `main` branch automatically deploy to Cloudflare Pages.
+## Websites
 
-The browser preview includes Dashboard, Customers, Operations, Finance, and Management. Version 2.4 adds editable customer/job flows, appointment scheduling, employee/time tracking, estimates, invoices, payment recording, reports, printer-friendly documents and local demo backup/restore.
+| Website | Audience | Purpose |
+| --- | --- | --- |
+| **[Public product website](https://nexus-crm-showcase.pages.dev)** | Prospects / businesses | Product overview, fictional-data demo links, optional early-access interest form |
+| [Interactive demo](https://nexus-crm-preview.pages.dev) | Anyone | Five tabs with fictional sample records saved in the visitor's browser only |
+| [Private secure cloud alpha](https://nexus-crm-secure.pages.dev) | Authorized owner | Cloud D1-backed business data, Finance, recovery, and owner-only Sales Leads dashboard |
 
-**This public website is a demo, not a production CRM.** Data is fictional, saved only to the current browser, and does not sync across devices or to Windows. Do not enter actual customer data or any secret.
+**Share the product website with prospective customers, not the private cloud alpha login.**
 
-See [the development plan and completion checklist](docs/DEVELOPMENT_STATUS.md) for what works and what remains.
+## Development state
 
-Windows source ZIP backups are under `backups/` for legacy compatibility. The Windows 2.3 app is separate from the browser demo. This GitHub repository is public and must never contain passwords, customer databases, or secrets.
+- Public showcase site and basic interest collection are in place. Interest data uses a separate Cloudflare D1 database.
+- The signed-in CRM has customers, jobs, employees, appointments, estimates, invoices, payment recording, reports and owner management. A submitted inquiry is not a paid CRM account.
+- Commercial billing, public account onboarding, verified multiple-company users, MFA, independent backups and true offline sync are **not ready**.
+- The website is in **pre-launch**. We are not accepting payments or granting commercial subscriptions.
+
+## Key references
+
+- [Public website implementation](launch-site/README.md)
+- [Sales launch and pricing draft](sales/LAUNCH_PLAN.md)
+- [Signed-in cloud alpha and recovery limitations](cloud-app/README.md)
+- [Original interactive demo completion notes](docs/DEVELOPMENT_STATUS.md)
+
+## Code and data safety
+
+This GitHub repository is public. It contains only source files and legacy version archives, not the live customer D1 database. **Never commit credentials, tokens, customer lists, private backups or other sensitive data here.**
+
+Cloudflare Pages deployments are triggered from GitHub. The public showcase, demo and private alpha have separate hosting configurations. The interest-collection database is separate from private CRM company records.
