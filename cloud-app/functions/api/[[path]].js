@@ -185,6 +185,24 @@ async function companyRecordCounts(db,tenantId){
  return Object.fromEntries(SNAPSHOT_DEFS.map((d,i)=>[d.table,reads[i]?.results?.[0]?.n||0]));
 }
 
+
+// Invite-only multi-company onboarding. A bearer invitation is delivered by the platform
+// operator; only its SHA-256 digest exists in D1. No public self-service signup.
+const INVITE_LIFETIME=3*24*60*60;
+const INVITE_LIMIT=25;
+const inviteTokenOk=x=>typeof x==="string"&&/^[a-f0-9]{64}$/.test(x);
+const accountPasswordOk=x=>typeof x==="string"&&x.length>=14&&x.length<=128;
+async function platformOperator(db,user){
+ if(user.role!=="owner")return false;
+ return !!(await first(db,"SELECT user_id FROM platform_operators WHERE user_id=?",user.user_id));
+}
+async function inviteRateLimit(db,request,invalid=false){
+ const key=await hash("company-invite|"+(request.headers.get("CF-Connecting-IP")||"unknown"));
+ if(await throttled(db,key))return false;
+ if(invalid)await badLogin(db,key);
+ return true;
+}
+
 async function handler(request,env){
  const db=env.DB,method=request.method.toUpperCase(),path=new URL(request.url).pathname.replace(/\/+$/,"");
  if(!db)return error("Cloud database not configured",503);
@@ -223,6 +241,46 @@ async function handler(request,env){
   await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(rateKey).run();
   const s=await issue(db,u.id);
   return response({ok:true,csrf:s.csrf},200,{"Set-Cookie":setCookie(s.token)});
+ }
+ if(path==="/api/invitations/preview"&&method==="POST"){
+  const v=await readJson(request),token=clean(v.token,128).toLowerCase();
+  if(!await inviteRateLimit(db,request))return error("Too many attempts; try later",429);
+  if(!inviteTokenOk(token)){
+   await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403);
+  }
+  const invite=await first(db,"SELECT company_name AS companyName,owner_email AS email,expires_at AS expiresAt FROM company_invitations WHERE token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",await hash(token),now());
+  if(!invite){await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403)}
+  return response({ok:true,companyName:invite.companyName,email:invite.email,expiresAt:invite.expiresAt});
+ }
+ if(path==="/api/invitations/accept"&&method==="POST"){
+  const v=await readJson(request),token=clean(v.token,128).toLowerCase(),password=typeof v.password==="string"?v.password:"";
+  if(!await inviteRateLimit(db,request))return error("Too many attempts; try later",429);
+  if(!inviteTokenOk(token)){
+   await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403);
+  }
+  if(!accountPasswordOk(password))return error("Choose a password of 14–128 characters",400);
+  const tokenHash=await hash(token),t=now();
+  const invite=await first(db,"SELECT id,company_name,owner_email FROM company_invitations WHERE token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",tokenHash,t);
+  if(!invite){
+   await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403);
+  }
+  const taken=await first(db,"SELECT id FROM users WHERE email=?",invite.owner_email);
+  if(taken)return error("This email is already assigned to an account. Contact the Nexus operator.",409);
+  const newUserId=crypto.randomUUID(),salt=hex(crypto.getRandomValues(new Uint8Array(16)));
+  const ph=await passwordHash(password,salt,ITERS);
+  // The same invite UUID is the new tenant's UUID; the unique tenant PK prevents
+  // two concurrent redemptions creating duplicate companies. D1 batch is atomic.
+  const rs=await db.batch([
+   db.prepare("INSERT INTO tenants(id,name,created_at) SELECT id,company_name,? FROM company_invitations WHERE id=? AND token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?")
+    .bind(t,invite.id,tokenHash,t),
+   db.prepare("INSERT INTO users(id,tenant_id,email,password_hash,salt,iterations,role,created_at) SELECT ?,id,owner_email,?,?,?,'owner',? FROM company_invitations WHERE id=? AND token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?")
+    .bind(newUserId,ph,salt,ITERS,t,invite.id,tokenHash,t),
+   db.prepare("UPDATE company_invitations SET redeemed_at=?,redeemed_user_id=? WHERE id=? AND token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?")
+    .bind(t,newUserId,invite.id,tokenHash,t)
+  ]);
+  if(rs.some(x=>x.meta?.changes!==1))throw new Error("Invitation redemption did not complete");
+  const session=await issue(db,newUserId);
+  return response({ok:true,company:invite.company_name,email:invite.owner_email,csrf:session.csrf},201,{"Set-Cookie":setCookie(session.token)});
  }
  const user=await current(request,db);
  if(!user)return error("Please sign in",401);
@@ -548,13 +606,55 @@ async function handler(request,env){
   if(result.meta?.changes!==1)return error("Inquiry not found",404);
   return response({ok:true});
  }
+ if(path.startsWith("/api/platform/")){
+  if(!(await platformOperator(db,user)))return error("Nexus platform operator access required",403);
+ }
+ if(path==="/api/platform/invitations"&&method==="GET"){
+  const items=await all(db,`SELECT id,company_name AS companyName,owner_email AS email,created_at AS createdAt,
+    expires_at AS expiresAt,redeemed_at AS redeemedAt,revoked_at AS revokedAt
+    FROM company_invitations ORDER BY created_at DESC,id DESC LIMIT 100`);
+  return response({items,mode:"invitation-only",selfRegistrationEnabled:false});
+ }
+ if(path==="/api/platform/companies"&&method==="GET"){
+  const items=await all(db,`SELECT t.id,t.name,t.created_at AS createdAt,
+    COALESCE((SELECT u.email FROM users u WHERE u.tenant_id=t.id AND u.role='owner' ORDER BY u.created_at LIMIT 1),'') AS ownerEmail,
+    (SELECT COUNT(*) FROM users u WHERE u.tenant_id=t.id) AS userCount,
+    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id=t.id) AS customerCount,
+    (SELECT COUNT(*) FROM jobs j WHERE j.tenant_id=t.id) AS jobCount
+    FROM tenants t ORDER BY t.created_at DESC LIMIT 100`);
+  return response({items});
+ }
+ if(path==="/api/platform/invitations"&&method==="POST"){
+  const v=await readJson(request),company=clean(v.companyName,150),email=clean(v.email,254).toLowerCase();
+  if(!company||company.length>150||!emailOk(email))return error("Enter a company name and a valid owner email",400);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect account password",403);
+  if(await first(db,"SELECT id FROM users WHERE email=?",email))return error("This email already has an account",409);
+  const active=await first(db,"SELECT COUNT(*) AS n FROM company_invitations WHERE redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",now());
+  if(active?.n>=INVITE_LIMIT)return error("Active pilot invitation limit reached",409);
+  const existing=await first(db,"SELECT id FROM company_invitations WHERE owner_email=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",email,now());
+  if(existing)return error("An active invitation already exists for this email; revoke it to issue another",409);
+  const token=secret(),digest=await hash(token),id=crypto.randomUUID(),t=now(),expiresAt=t+INVITE_LIFETIME;
+  await db.prepare("INSERT INTO company_invitations(id,company_name,owner_email,token_hash,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?)")
+   .bind(id,company,email,digest,user.user_id,t,expiresAt).run();
+  // Token is returned exactly once and never retained in browser storage.
+  return response({ok:true,id,companyName:company,email,expiresAt,token},201);
+ }
+ if(path.startsWith("/api/platform/invitations/")&&path.endsWith("/revoke")&&method==="POST"){
+  const id=decodeURIComponent(path.slice("/api/platform/invitations/".length,-"/revoke".length));
+  const v=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect account password",403);
+  const r=await db.prepare("UPDATE company_invitations SET revoked_at=? WHERE id=? AND redeemed_at IS NULL AND revoked_at IS NULL")
+   .bind(now(),id).run();
+  if(r.meta?.changes!==1)return error("Active invitation not found",404);
+  return response({ok:true});
+ }
  return error("Not found",404);
 }
 export async function onRequest({request,env}){
  try{
   const result=await handler(request,env);
   if(request.method!=="GET"&&result.status>=200&&result.status<300&&
-   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security|sales)(\/|$)/.test(new URL(request.url).pathname)){
+   /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security|sales|platform)(\/|$)/.test(new URL(request.url).pathname)){
    const user=await current(request,env.DB).catch(()=>null);
    if(user)await logAudit(env.DB,user,new URL(request.url).pathname,request.method);
   }
