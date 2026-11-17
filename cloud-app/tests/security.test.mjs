@@ -307,8 +307,11 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
   const staff=await expectStatus(db,b,"POST","/api/staff/invitations",{
    email:"qa-expired-staff@example.invalid",role:"employee",password:passwordB
   },201);
-  db.raw.prepare("UPDATE staff_invitations SET expires_at=? WHERE id=?")
-   .run(Math.floor(Date.now()/1000)-1,staff.id);
+  // Move the invitation's test-only timestamps together to preserve the
+  // schema invariant (expires_at > created_at) while simulating expiry.
+  const simulatedNow=Math.floor(Date.now()/1000);
+  db.raw.prepare("UPDATE staff_invitations SET created_at=?,expires_at=? WHERE id=?")
+   .run(simulatedNow-3600,simulatedNow-1,staff.id);
   await expectStatus(db,null,"POST","/api/staff/invitations/accept",{
    token:staff.token,password:passwordEmployee
   },403);
