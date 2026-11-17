@@ -277,6 +277,52 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    email:emailEmployee,password:passwordEmployee
   },200);
  });
+ await t.test("employee self-service security, password rotation and code replacement",async()=>{
+  const saved=await expectStatus(db,employee,"POST","/api/security/recovery-codes",{
+   password:passwordEmployee
+  },201);
+  assert.equal(saved.codes.length,8);
+  assert.equal((await expectStatus(db,employee,"GET","/api/security/recovery-count",undefined,200)).remaining,8);
+  const newPassword="QA-Employee-Rotated-Password-2468";
+  await expectStatus(db,employee,"POST","/api/security/change-password",{
+   currentPassword:passwordEmployee,newPassword
+  },200);
+  await expectStatus(db,null,"POST","/api/login",{email:emailEmployee,password:passwordEmployee},401);
+  await expectStatus(db,employee,"POST","/api/security/recovery-codes",{password:newPassword},201);
+  const old=await call(db,null,"POST","/api/recover",{
+   email:emailEmployee,code:saved.codes[0],newPassword:"QA-Attacker-Replay-Code-2468"
+  });
+  assert.ok(old.status>=400,"Regenerated recovery codes must invalidate previous codes");
+ });
+ await t.test("revoked and expired invitations cannot create accounts",async()=>{
+  const revoked=await expectStatus(db,a,"POST","/api/platform/invitations",{
+   companyName:"QA Revoked Company",email:"qa-revoked-owner@example.invalid",password:passwordA
+  },201);
+  await expectStatus(db,a,"POST","/api/platform/invitations/"+revoked.id+"/revoke",{
+   password:passwordA
+  },200);
+  await expectStatus(db,null,"POST","/api/invitations/accept",{
+   token:revoked.token,password:passwordB
+  },403);
+  const staff=await expectStatus(db,b,"POST","/api/staff/invitations",{
+   email:"qa-expired-staff@example.invalid",role:"employee",password:passwordB
+  },201);
+  db.raw.prepare("UPDATE staff_invitations SET expires_at=? WHERE id=?")
+   .run(Math.floor(Date.now()/1000)-1,staff.id);
+  await expectStatus(db,null,"POST","/api/staff/invitations/accept",{
+   token:staff.token,password:passwordEmployee
+  },403);
+  const count=db.raw.prepare("SELECT COUNT(*) AS count FROM users").get().count;
+  assert.equal(count,4,"Rejected invitations must not create any new users");
+ });
+ await t.test("backup ownership is scoped to the authenticated company",async()=>{
+  const own=await expectStatus(db,a,"POST","/api/backups",{note:"Company A isolation QA"},201);
+  await expectStatus(db,a,"GET","/api/backups/"+own.snapshot.id+"/preview",undefined,200);
+  await expectStatus(db,b,"GET","/api/backups/"+own.snapshot.id+"/preview",undefined,404);
+  await expectStatus(db,b,"POST","/api/backups/"+own.snapshot.id+"/export",{
+   password:passwordB
+  },404);
+ });
  await t.test("backup snapshot, integrity preview, exports and audit trail",async()=>{
   const backup=await expectStatus(db,b,"POST","/api/backups",{note:"QA regression snapshot"},201);
   assert.ok(backup.snapshot?.id);
