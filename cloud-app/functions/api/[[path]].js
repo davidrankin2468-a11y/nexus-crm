@@ -323,6 +323,33 @@ async function handler(request,env){
   await logAudit(db,{tenant_id:invite.tenant_id,user_id:uid},"/api/staff/invitations/accept","POST");
   return response({ok:true,role:invite.role,csrf:session.csrf},201,{"Set-Cookie":setCookie(session.token)});
  }
+ if(path==="/api/recover"&&method==="POST"){
+  // High-entropy single-use recovery codes are generated only after sign-in
+  // and password re-verification; never send a code through the public API.
+  const v=await readJson(request),email=clean(v.email,254).toLowerCase(),
+    code=clean(v.code,80).toLowerCase(),password=typeof v.newPassword==="string"?v.newPassword:"";
+  const key=await hash("recovery|"+email+"|"+(request.headers.get("CF-Connecting-IP")||"unknown"));
+  if(await throttled(db,key))return error("Too many attempts; try again later",429);
+  if(!emailOk(email)||!/^[a-f0-9]{32}$/.test(code)||!accountPasswordOk(password)){
+   await badLogin(db,key);return error("Invalid recovery details",400);
+  }
+  const account=await first(db,"SELECT id,tenant_id FROM users WHERE email=?",email);
+  const codeHash=await hash((account?.id||"unknown")+":"+code);
+  const existing=account?await first(db,"SELECT code_hash FROM account_recovery_codes WHERE user_id=? AND code_hash=? AND used_at IS NULL",account.id,codeHash):null;
+  if(!existing){await badLogin(db,key);return error("Invalid or already-used recovery code",403)}
+  const salt=hex(crypto.getRandomValues(new Uint8Array(16))),ph=await passwordHash(password,salt,ITERS),t=now();
+  const out=await db.batch([
+   db.prepare("UPDATE users SET password_hash=?,salt=?,iterations=? WHERE id=? AND EXISTS(SELECT 1 FROM account_recovery_codes WHERE user_id=? AND code_hash=? AND used_at IS NULL)")
+    .bind(ph,salt,ITERS,account.id,account.id,codeHash),
+   db.prepare("UPDATE account_recovery_codes SET used_at=? WHERE user_id=? AND code_hash=? AND used_at IS NULL")
+    .bind(t,account.id,codeHash),
+   db.prepare("DELETE FROM sessions WHERE user_id=?").bind(account.id)
+  ]);
+  if(out[0]?.meta?.changes!==1||out[1]?.meta?.changes!==1)throw Error("Recovery was not completed");
+  await db.prepare("DELETE FROM login_attempts WHERE rate_key=?").bind(key).run();
+  await logAudit(db,{tenant_id:account.tenant_id,user_id:account.id},"/api/recover","POST");
+  return response({ok:true,message:"Password updated. Sign in with your new password."});
+ }
  const user=await current(request,db);
  if(!user)return error("Please sign in",401);
  if(path==="/api/me"&&method==="GET"){
@@ -334,13 +361,16 @@ async function handler(request,env){
   await db.prepare("DELETE FROM sessions WHERE token_hash=?").bind(user.token_hash).run();
   return response({ok:true},200,{"Set-Cookie":setCookie("",true)});
  }
+ const ownSecurity=(path==="/api/security/change-password"&&method==="POST")||
+  (path==="/api/security/recovery-codes"&&method==="POST")||
+  (path==="/api/security/recovery-count"&&method==="GET");
  // Server-enforced RBAC: UI visibility is never relied upon for security.
  // Admin can operate business/Finance; employee can only read nonfinancial workflows.
  if(user.role==="admin"){
-  if(!(/^\/api\/(dashboard|customers|jobs|employees|appointments|estimates|invoices|payments|reports)(\/|$)/.test(path)))
+  if(!ownSecurity&&!(/^\/api\/(dashboard|customers|jobs|employees|appointments|estimates|invoices|payments|reports)(\/|$)/.test(path)))
    return error("Company owner permissions required",403);
  }else if(user.role==="employee"){
-  if(method!=="GET"||!(/^\/api\/(dashboard|customers|jobs|employees|appointments)(\/|$)/.test(path)))
+  if(!ownSecurity&&(method!=="GET"||!(/^\/api\/(dashboard|customers|jobs|employees|appointments)(\/|$)/.test(path))))
    return error("This staff role has read-only access to company operations",403);
  }else if(user.role!=="owner")return error("Invalid account role",403);
  if(path==="/api/dashboard"&&method==="GET"){
@@ -608,6 +638,21 @@ async function handler(request,env){
  if(path==="/api/security/activity"&&method==="GET"){
   const items=await all(db,"SELECT category,action,created_at AS createdAt FROM security_audit WHERE tenant_id=? ORDER BY created_at DESC,id DESC LIMIT 50",user.tenant_id);
   return response({items});
+ }
+ if(path==="/api/security/recovery-count"&&method==="GET"){
+  const row=await first(db,"SELECT COUNT(*) AS remaining FROM account_recovery_codes WHERE user_id=? AND used_at IS NULL",user.user_id);
+  return response({remaining:row?.remaining||0});
+ }
+ if(path==="/api/security/recovery-codes"&&method==="POST"){
+  const v=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect account password",403);
+  const codes=Array.from({length:8},()=>hex(crypto.getRandomValues(new Uint8Array(16))));
+  const t=now();
+  const writes=await Promise.all(codes.map(async code=>
+   db.prepare("INSERT INTO account_recovery_codes(user_id,code_hash,created_at) VALUES(?,?,?)")
+    .bind(user.user_id,await hash(user.user_id+":"+code),t)));
+  await db.batch([db.prepare("DELETE FROM account_recovery_codes WHERE user_id=?").bind(user.user_id),...writes]);
+  return response({ok:true,codes,remaining:8,warning:"Save these codes now. Each works once; old codes have been invalidated."},201);
  }
  if(path==="/api/security/change-password"&&method==="POST"){
   const v=await readJson(request);
