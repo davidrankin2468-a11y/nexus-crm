@@ -1,0 +1,24 @@
+name: Nexus CRM isolated security regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloud-app/functions/api/**"
+      - "cloud-app/schema.sql"
+      - "cloud-app/migrations/**"
+      - "cloud-app/tests/**"
+      - ".github/workflows/crm-security.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-crm-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run isolated API and security tests (no live data)
+        run: node --test cloud-app/tests/security.test.mjs
