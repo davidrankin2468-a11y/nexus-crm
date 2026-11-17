@@ -1,4 +1,26 @@
-# Nexus CRM 2.7 — Secure Cloud Alpha (Backup & Security)
+
+## 2.9 — Zero-subscription security and backup enhancements (November 16, 2026)
+
+- **Management → Backups** now provides a password-verified **portable encrypted download** of an existing recovery snapshot to the owner's phone or computer. Records are encrypted entirely in the browser with AES-256-GCM; the *separate* backup passphrase does not leave the device.
+- **Verify an encrypted backup file** decrypts the downloaded file locally and checks business-table counts. It does not upload the file.
+- **Management → Security** has a change-password form requiring the old password and a new password of at least 14 characters. A successful change revokes other active sessions. Do not try changing your password as a casual test.
+- The **Management → Sales Leads** feature is restricted by a dedicated `platform_operators` database table. Future customer tenant owners do not automatically receive access to platform-wide prospect inquiries.
+- `migrations/005_platform_operator.sql` has been applied, retaining one existing Nexus platform operator.
+- No paid Cloudflare subscription, billing provider, email service or R2 storage was activated for these upgrades.
+- Source branch `before-free-safety-upgrades-2026-11` preserves the previous state.
+- [Portable backup procedure and file format](PORTABLE_BACKUPS.md).
+
+### Checks performed
+
+An isolated mobile Chromium test passed 9 checks: backup download and verification controls, password-change form, five-tab navigation, platform-only sales access, no horizontal overflow, fictional AES-GCM backup creation, and successful local decryption. The temporary test asset was deleted after validation. These are **interface/cryptography checks**, not independent security certification. Real authenticated download and password-update flows should be exercised by the owner on the actual session. No existing CRM company records were modified.
+
+### Important limitations
+
+The exported encrypted archive is a **manual, user-held independent copy**, not an automatically scheduled off-site backup. The CRM does not yet import encrypted archive files: recovery from a downloaded archive requires a supported future import tool or assisted data reconstruction. Automated off-site backups, MFA, multi-company enrollment/tenant isolation penetration testing, a complete production security assessment, legal/privacy review, support and paid billing still block a public commercial release.
+
+---
+
+# Nexus CRM 2.9 — Secure Cloud Alpha (Free Security Upgrades)
 
 Live secured application: **https://nexus-crm-secure.pages.dev**
 
