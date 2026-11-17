@@ -69,6 +69,23 @@ async function handler(request,env){
  if(path==="/api/status"&&method==="GET"){
   const r=await first(db,"SELECT COUNT(*) AS count FROM users");return response({configured:!!r?.count,version:"2.5-alpha"});
  }
+ if(path==="/api/diagnose"&&method==="POST"){
+  const v=await readJson(request);
+  const supplied=clean(v.setupCode,150);
+  const present=await first(db,"SELECT token_hash FROM bootstrap_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?",await hash(supplied),now());
+  if(!present)return error("Unauthorized",403);
+  const steps=[];
+  try{
+   const salt=hex(crypto.getRandomValues(new Uint8Array(16)));
+   steps.push("salt generated");
+   const start=Date.now();
+   const hashResult=await passwordHash("diagnostic-test-password-dummy",salt);
+   steps.push("PBKDF2 completed in "+(Date.now()-start)+"ms");
+   return response({success:hashResult.length===64,steps});
+  }catch(e){
+   return response({success:false,steps,errorName:String(e?.name),errorMessage:String(e?.message).slice(0,180)},200);
+  }
+ }
  if(path==="/api/setup"&&method==="POST"){
   const v=await readJson(request),code=clean(v.setupCode,150),companyName=clean(v.companyName,150),email=clean(v.email,254).toLowerCase(),password=String(v.password||"");
   if(!companyName||!code||!emailOk(email)||password.length<12||password.length>128)return error("Company, email, setup code and a password of at least 12 characters are required");
