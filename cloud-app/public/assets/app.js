@@ -510,7 +510,21 @@ function subscriptionContent(){
  const current=x?.configured?features.map(([key,name])=>{const e=x.entitlements.find(z=>z.featureKey===key);return '<li>'+safe(name)+': <strong>'+(e?.enabled?'Included':'Not included')+'</strong></li>'}).join(''):'';
  return panel("Your subscription",head+(current?'<ul>'+current+'</ul>':''))+
  panel("Compare subscription plans (preview only)",'<p>These cards show the planned subscription tiers. They do not change your plan or charge a payment.</p><div class="cards">'+plans.map(([key,name,price,seats])=>'<div class="card"><h3>'+name+'</h3><strong>'+price+'</strong><p>'+seats+'</p><ul>'+features.map(([feature,label])=>'<li>'+safe(label)+': '+(preview[key].includes(feature)?'Included':'Locked')+'</li>').join('')+'</ul></div>').join('')+'</div>')+
- panel("Permission testing",'<p>These checks use your authenticated company session and are read-only.</p><button type="button" data-action="test-license">Run plan permission tests</button><pre id="license-test-results" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>');
+ panel("Permission testing",'<p>These checks use your authenticated company session and are read-only.</p><button type="button" data-action="test-license">Run plan permission tests</button> <button type="button" data-action="test-enforcement">Test server enforcement</button><pre id="license-test-results" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>');
+}
+async function testServerEnforcement(){
+ const target=$("license-test-results");if(!target)return;target.textContent="Testing server responses…";
+ const lines=[];
+ for(const feature of ["crm","projects","advanced_reports","automation","nexus_ai"]){
+  try{
+   const res=await fetch("/api/license/require?feature="+encodeURIComponent(feature),{credentials:"same-origin",cache:"no-store",headers:{Accept:"application/json"}});
+   const type=res.headers.get("content-type")||"";
+   if(!type.includes("application/json"))throw Error("Non-JSON response");
+   const data=await res.json();
+   lines.push(feature+": HTTP "+res.status+" · "+(data.allowed?"ALLOWED":"BLOCKED")+" ("+String(data.reason||"unknown")+")");
+  }catch(e){lines.push(feature+": ERROR "+e.message)}
+ }
+ const el=$("license-test-results");if(el)el.textContent=lines.join("\n");
 }
 async function loadSubscription(){
  try{s.licenseInfo=await request("/api/license/me")}catch(e){s.licenseInfo={error:e.message}}
@@ -756,6 +770,7 @@ document.addEventListener("click",async e=>{
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
  if(b.dataset.management){s.managementView=b.dataset.management;if(s.managementView==="Subscription & License")loadSubscription();s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
  if(b.dataset.action==="test-license"){await testSubscription();return}
+ if(b.dataset.action==="test-enforcement"){await testServerEnforcement();return}
  if(b.dataset.action==="copy-company-invite"){
   if(!s.newInvite)return;
   const link=location.origin+"/#invite="+s.newInvite.token;
