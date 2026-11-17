@@ -1,0 +1,18 @@
+import {evaluateLicense,canExport,canAddSeat} from "./license-engine.js";
+import assert from "node:assert/strict";
+const t=2000000000;
+const license={status:"active",period_start:t-100,period_end:t+100,grace_until:null};
+const features=[{feature_key:"crm",enabled:1},{feature_key:"nexus_ai",enabled:0}];
+assert.equal(evaluateLicense({license,entitlements:features,feature:"crm",now:t}).allowed,true);
+assert.equal(evaluateLicense({license,entitlements:features,feature:"nexus_ai",now:t}).allowed,false);
+assert.equal(evaluateLicense({license:{...license,status:"suspended"},entitlements:features,feature:"crm",now:t}).allowed,false);
+assert.equal(evaluateLicense({license:{...license,period_end:t-1},entitlements:features,feature:"crm",now:t}).allowed,false);
+assert.equal(evaluateLicense({license:{...license,status:"past_due",grace_until:t+10},entitlements:features,feature:"crm",now:t}).allowed,true);
+assert.equal(evaluateLicense({license:{...license,status:"grace",grace_until:t-1},entitlements:features,feature:"crm",now:t}).allowed,false);
+assert.equal(evaluateLicense({license:null,feature:"crm",now:t}).allowed,false);
+assert.equal(canExport({license:{export_until:t+1},now:t}),true);
+assert.equal(canExport({license:{export_until:t-1},now:t}),false);
+assert.equal(canAddSeat({licensed:3,used:3}),false);
+assert.equal(canAddSeat({licensed:3,used:2}),true);
+assert.equal(canAddSeat({licensed:null,used:100}),true);
+console.log("11 license engine assertions passed");
