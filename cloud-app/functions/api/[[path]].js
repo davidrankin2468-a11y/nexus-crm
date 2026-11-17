@@ -203,6 +203,17 @@ async function inviteRateLimit(db,request,invalid=false){
  return true;
 }
 
+function permitted(role,method,path){
+ const ownSecurity=(path==="/api/security/change-password"&&method==="POST")||
+  (path==="/api/security/recovery-codes"&&method==="POST")||
+  (path==="/api/security/recovery-count"&&method==="GET");
+ if(role==="owner")return true;
+ if(ownSecurity)return role==="admin"||role==="employee";
+ if(role==="admin")return /^\/api\/(dashboard|customers|jobs|employees|appointments|estimates|invoices|payments|reports)(\/|$)/.test(path);
+ if(role==="employee")return method==="GET"&&/^\/api\/(dashboard|customers|jobs|employees|appointments)(\/|$)/.test(path);
+ return false;
+}
+
 async function handler(request,env){
  const db=env.DB,method=request.method.toUpperCase(),path=new URL(request.url).pathname.replace(/\/+$/,"");
  if(!db)return error("Cloud database not configured",503);
@@ -361,18 +372,7 @@ async function handler(request,env){
   await db.prepare("DELETE FROM sessions WHERE token_hash=?").bind(user.token_hash).run();
   return response({ok:true},200,{"Set-Cookie":setCookie("",true)});
  }
- const ownSecurity=(path==="/api/security/change-password"&&method==="POST")||
-  (path==="/api/security/recovery-codes"&&method==="POST")||
-  (path==="/api/security/recovery-count"&&method==="GET");
- // Server-enforced RBAC: UI visibility is never relied upon for security.
- // Admin can operate business/Finance; employee can only read nonfinancial workflows.
- if(user.role==="admin"){
-  if(!ownSecurity&&!(/^\/api\/(dashboard|customers|jobs|employees|appointments|estimates|invoices|payments|reports)(\/|$)/.test(path)))
-   return error("Company owner permissions required",403);
- }else if(user.role==="employee"){
-  if(!ownSecurity&&(method!=="GET"||!(/^\/api\/(dashboard|customers|jobs|employees|appointments)(\/|$)/.test(path))))
-   return error("This staff role has read-only access to company operations",403);
- }else if(user.role!=="owner")return error("Invalid account role",403);
+ if(!permitted(user.role,method,path))return error("Your account role does not allow this action",403);
  if(path==="/api/dashboard"&&method==="GET"){
   const c=await first(db,"SELECT COUNT(*) AS count FROM customers WHERE tenant_id=?",user.tenant_id);
   const j=await first(db,"SELECT COUNT(*) AS count FROM jobs WHERE tenant_id=? AND status NOT IN ('Cancelled','Completed')",user.tenant_id);
