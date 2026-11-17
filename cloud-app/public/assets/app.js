@@ -18,7 +18,12 @@ async function request(path,method="GET",data=null){
  const headers={"Accept":"application/json"};
  if(data!==null)headers["Content-Type"]="application/json";
  if(method!=="GET"&&s.csrf)headers["X-Nexus-CSRF"]=s.csrf;
- const res=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers,body:data===null?undefined:JSON.stringify(data)});
+ let res;
+ try{
+  res=await fetch(path,{method,credentials:"same-origin",cache:"no-store",headers,body:data===null?undefined:JSON.stringify(data)});
+ }catch(e){
+  throw new Error("Cloud connection failed. Check your internet connection and try again.");
+ }
  let json;try{json=await res.json()}catch{throw new Error("The server returned an unexpected response")}
  if(!res.ok)throw new Error(json?.error||"Request failed");
  return json;
@@ -46,6 +51,17 @@ async function invitationScreen(){
  if(!s.pendingInviteToken){authScreen("login");return}
  s.account=null;s.csrf="";
  try{
+  // Do not replace an existing owner's session by activating another company
+  // in the same browser. Ask the invitee to use a private window.
+  const existingSession=await request("/api/me").catch(()=>null);
+  if(existingSession?.user){
+   $("mount").innerHTML='<div class="auth"><h1>Use a separate browser session</h1>'+
+    '<p>You are already signed in as <strong>'+safe(existingSession.user.email)+
+    '</strong> at <strong>'+safe(existingSession.user.company)+'</strong>.</p>'+
+    '<div class="hint">Opening a new company invitation here could switch the current account. Open the invitation link in a private/incognito window or another device to keep these companies separate.</div>'+
+    '<button type="button" data-action="cancel-invite">Return to your existing account</button></div>';
+   return;
+  }
   const invite=await request("/api/invitations/preview","POST",{token:s.pendingInviteToken});
   $("mount").innerHTML='<div class="auth"><h1>Join your company on Nexus CRM</h1>'+
    '<p>This is a one-time invitation for a separate company workspace. Your login will only access that company.</p>'+
@@ -66,7 +82,8 @@ async function invitationScreen(){
 }
 function statusBadge(v){return '<span class="tag">'+safe(v)+'</span>'}
 function table(headers,rows){
- return '<div class="tablewrap"><table><thead><tr>'+headers.map(h=>'<th>'+safe(h)+'</th>').join("")+'</tr></thead><tbody>'+
+ return '<p class="table-scroll-hint">Swipe left or right to see all columns</p>'+
+ '<div class="tablewrap" role="region" tabindex="0" aria-label="Scrollable data table"><table><thead><tr>'+headers.map(h=>'<th scope="col">'+safe(h)+'</th>').join("")+'</tr></thead><tbody>'+
  (rows.length?rows.join(""):'<tr><td colspan="'+headers.length+'" class="muted">No records yet.</td></tr>')+
  '</tbody></table></div>';
 }
@@ -308,6 +325,7 @@ function companyAccessContent(){
   '<td>'+safe(x.userCount)+'</td><td>'+safe(x.customerCount)+'</td><td>'+safe(x.jobCount)+'</td></tr>');
  return panel("Invite a separate company (pilot testing only)",
   '<p>Create a separate company workspace and its first owner account. Each invitation is single-use and expires after 3 days. The new account must have an email not already used on Nexus CRM.</p>'+
+  '<div class="hint"><strong>Pilot only.</strong> Send invitations to test accounts you control. Email verification and MFA are not yet enabled.</div>'+
   '<form data-form="company-invite" class="gridform">'+
   input("companyName","New company name","","text",true)+
   input("email","Company owner email","","email",true)+
@@ -457,40 +475,61 @@ function draw(){
  '<button data-action="refresh">Refresh data</button></div><div id="view"></div></main></div>';
  currentTab();
 }
+// Fetch independent workspaces concurrently. A failure in Finance or Management
+// must not prevent the core CRM from loading.
+let refreshNumber=0;
 async function refresh(){
+ const seq=++refreshNumber;
  const me=await request("/api/me");
+ if(seq!==refreshNumber)return;
  s.account=me.user;s.csrf=me.csrf;
- const [customers,jobs,employees,appointments,dashboard]=await Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/employees"),request("/api/appointments"),request("/api/dashboard")]);
- s.customers=customers.items;s.jobs=jobs.items;s.employees=employees.items;s.appointments=appointments.items;s.dashboard=dashboard;
- try{
-  const [estimates,invoices,payments,reports]=await Promise.all([request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")]);
-  s.estimates=estimates.items;s.invoices=invoices.items;s.payments=payments.items;s.financeReport=reports.totals;s.financeError="";
- }catch(e){
-  s.estimates=[];s.invoices=[];s.payments=[];s.financeReport=null;
-  s.financeError=e?.message||"Unable to load Finance";
- }
- if(s.account?.role==="owner"){
-  try{
-   const [b,security,activity]=await Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")]);
-   s.backupItems=b.items;s.securitySummary=security;s.auditEvents=activity.items;s.recoveryError="";
-  }catch(e){s.recoveryError=e?.message||"Unable to load recovery controls";}
-  if(s.account?.isPlatformOperator){
-   try{
-    const lead=await request("/api/sales/leads");
-    s.salesLeads=lead.items;s.salesTotal=lead.total;s.salesNew=lead.newCount;s.salesError="";
-   }catch(e){s.salesError=e?.message||"Unable to load inquiries";}
-   try{
-    const [invitations,companies]=await Promise.all([request("/api/platform/invitations"),request("/api/platform/companies")]);
-    s.companyInvites=invitations.items;s.companies=companies.items;s.onboardingError="";
-   }catch(e){s.onboardingError=e?.message||"Unable to load company onboarding";}
+ const coreLoad=Promise.all([request("/api/customers"),request("/api/jobs"),request("/api/employees"),request("/api/appointments"),request("/api/dashboard")])
+  .then(([customers,jobs,employees,appointments,dashboard])=>({customers,jobs,employees,appointments,dashboard}));
+ const financeLoad=Promise.all([request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")])
+  .then(([estimates,invoices,payments,reports])=>({estimates,invoices,payments,reports}));
+ const owner=s.account.role==="owner";
+ const managementLoad=owner?Promise.all([request("/api/backups"),request("/api/security/summary"),request("/api/security/activity")])
+  .then(([backups,summary,activity])=>({backups,summary,activity})):Promise.resolve(null);
+ const platform=owner&&s.account.isPlatformOperator;
+ const platformLoad=platform?Promise.all([
+  request("/api/sales/leads"),request("/api/platform/invitations"),request("/api/platform/companies")
+ ]).then(([leads,invitations,companies])=>({leads,invitations,companies})):Promise.resolve(null);
+ const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,platformLoad]);
+ if(seq!==refreshNumber)return;
+ if(outcomes[0].status==="rejected")throw outcomes[0].reason;
+ const core=outcomes[0].value;
+ s.customers=core.customers.items;s.jobs=core.jobs.items;s.employees=core.employees.items;
+ s.appointments=core.appointments.items;s.dashboard=core.dashboard;
+ const financial=outcomes[1];
+ if(financial.status==="fulfilled"){
+  s.estimates=financial.value.estimates.items;s.invoices=financial.value.invoices.items;
+  s.payments=financial.value.payments.items;s.financeReport=financial.value.reports.totals;s.financeError="";
+ }else{s.financeError=financial.reason?.message||"Unable to load Finance";}
+ if(owner){
+  const management=outcomes[2];
+  if(management.status==="fulfilled"){
+   s.backupItems=management.value.backups.items;s.securitySummary=management.value.summary;
+   s.auditEvents=management.value.activity.items;s.recoveryError="";
+  }else{s.recoveryError=management.reason?.message||"Unable to load recovery controls";}
+  if(platform){
+   const sales=outcomes[3];
+   if(sales.status==="fulfilled"){
+    s.salesLeads=sales.value.leads.items;s.salesTotal=sales.value.leads.total;s.salesNew=sales.value.leads.newCount;
+    s.companyInvites=sales.value.invitations.items;s.companies=sales.value.companies.items;
+    s.onboardingError="";s.salesError="";
+   }else{
+    s.onboardingError=sales.reason?.message||"Unable to load company onboarding";
+    s.salesError=s.onboardingError;
+   }
   }
  }
  draw();
 }
 async function start(){
  try{
-  const status=await request("/api/status");
+  // Invitation owners need not wait for the public status request.
   if(s.pendingInviteToken){await invitationScreen();return}
+  const status=await request("/api/status");
   try{await refresh();notice("")}
   catch(e){if((e.message||"").includes("sign in"))authScreen(status.configured?"login":"setup");
   else if(e.message==="Please sign in")authScreen(status.configured?"login":"setup");
@@ -511,7 +550,11 @@ document.addEventListener("click",async e=>{
   return;
  }
  if(b.dataset.action==="clear-company-invite"){s.newInvite=null;draw();notice("One-time invitation link hidden.");return}
- if(b.dataset.action==="cancel-invite"){s.pendingInviteToken="";authScreen("login");notice("");return}
+ if(b.dataset.action==="cancel-invite"){
+  s.pendingInviteToken="";
+  try{await refresh();notice("");}catch(e){authScreen("login");notice("");}
+  return;
+ }
  if(b.dataset.exportLeads){exportLeadsCsv();return}
  if(b.dataset.deleteLead){
   if(!confirm("Permanently delete this early-access inquiry? This cannot be undone."))return;
