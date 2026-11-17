@@ -226,7 +226,10 @@ async function handler(request,env){
  }
  const user=await current(request,db);
  if(!user)return error("Please sign in",401);
- if(path==="/api/me"&&method==="GET")return response({user:{email:user.email,role:user.role,company:user.company},csrf:user.csrf_token});
+ if(path==="/api/me"&&method==="GET"){
+  const platform=await first(db,"SELECT user_id FROM platform_operators WHERE user_id=?",user.user_id);
+  return response({user:{email:user.email,role:user.role,company:user.company,isPlatformOperator:!!platform},csrf:user.csrf_token});
+ }
  if(method!=="GET"&&!same(request.headers.get("X-Nexus-CSRF")||"",user.csrf_token))return error("Session verification required",403);
  if(path==="/api/logout"&&method==="POST"){
   await db.prepare("DELETE FROM sessions WHERE token_hash=?").bind(user.token_hash).run();
@@ -506,7 +509,8 @@ async function handler(request,env){
  }
  // Sales interest entries are in a separate D1 database and require company-owner authentication.
  if(path.startsWith("/api/sales/")){
-  if(user.role!=="owner")return error("Owner account required",403);
+  if(user.role!=="owner"||!(await first(db,"SELECT user_id FROM platform_operators WHERE user_id=?",user.user_id)))
+   return error("Nexus platform operator account required",403);
   if(!env.LEADS)return error("Sales inquiry database is not connected",503);
  }
  if(path==="/api/sales/leads"&&method==="GET"){
