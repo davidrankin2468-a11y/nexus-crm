@@ -138,6 +138,17 @@ function table(headers,rows){
  '</tbody></table></div>';
 }
 function panel(title,contents){return '<section class="panel"><h2>'+safe(title)+'</h2>'+contents+'</section>'}
+function editorPanel(title,contents,open=false){
+ if(s.account?.role==="employee")return "";
+ return '<details class="panel editor-panel"'+(open?' open':'')+'>'+
+ '<summary><span>'+safe(title)+'</span><span class="editor-caret" aria-hidden="true"></span></summary>'+
+ '<div class="editor-body">'+contents+'</div></details>';
+}
+function sectionNav(items,active,key,label){
+ return '<nav class="section-tabs" aria-label="'+safe(label)+'">'+items.map(t=>
+  '<button type="button" data-'+key+'="'+safe(t)+'" aria-pressed="'+(t===active?"true":"false")+
+  '" class="section-tab '+(t===active?"primary active":"")+'">'+safe(t)+'</button>').join("")+'</nav>';
+}
 function input(name,label,value="",type="text",required=false){
  return '<label>'+safe(label)+'<input name="'+safe(name)+'" type="'+safe(type)+'" value="'+safe(value)+'" maxlength="250" '+(required?"required":"")+'></label>';
 }
@@ -153,8 +164,7 @@ function localDate(){
 }
 const financeViews=["Estimates","Invoices","Payments","Reports"];
 const estimateStatusOptions=selected=>["Draft","Sent","Accepted","Declined"].map(v=>'<option value="'+v+'" '+(v===selected?"selected":"")+'>'+v+'</option>').join("");
-const financeNavigation=()=>'<div class="actionrow">'+financeViews.map(t=>
- '<button type="button" data-finance="'+t+'" class="'+(s.financeView===t?"primary":"")+'">'+t+'</button>').join("")+'</div>';
+const financeNavigation=()=>sectionNav(financeViews,s.financeView,"finance","Finance sections");
 function financeContent(){
  const nav=financeNavigation(),view=s.financeView;
  if(s.financeError)return nav+panel("Finance needs attention",'<p>Unable to load cloud financial records: '+safe(s.financeError)+'</p><p>Your customers and jobs are still available. Select Refresh data to try Finance again.</p>');
@@ -177,8 +187,9 @@ function financeContent(){
   const rows=s.estimates.map(x=>'<tr><td>'+safe(x.number)+'</td><td>'+safe(x.customerName)+'</td><td>'+safe(x.description)+'</td><td>'+money(x.amount)+'</td><td>'+statusBadge(x.status)+'</td><td>'+
    (x.invoiced?'<span class="muted">Invoiced</span>':'<button data-estimate="'+safe(x.id)+'">Edit</button>')+
    ' <button data-print-type="estimate" data-print-id="'+safe(x.id)+'">Print</button></td></tr>');
-  return nav+panel(e?"Edit estimate":"New estimate",s.customers.length?create:"<p>Add a customer before creating an estimate.</p>")+
-   panel("Convert accepted estimate to invoice",convert)+panel("Saved estimates",table(["Estimate","Customer","Work","Amount","Status","Actions"],rows));
+  return nav+(s.customers.length?editorPanel(e?"Edit estimate":"New estimate",create,!!e):panel("Getting started",'<p>Add a customer before creating an estimate.</p>'))+
+   (eligible.length?editorPanel("Invoice accepted estimate",convert):"")+
+   panel("Estimates · "+s.estimates.length,table(["Estimate","Customer","Work","Amount","Status","Actions"],rows));
  }
  if(view==="Invoices"){
   const create='<form data-form="invoice" class="gridform">'+
@@ -190,9 +201,9 @@ function financeContent(){
   const rows=s.invoices.map(x=>'<tr><td>'+safe(x.number)+'</td><td>'+safe(x.customerName)+'</td><td>'+money(x.amount)+'</td><td>'+
    money(x.paid)+'</td><td>'+money(x.balance)+'</td><td>'+safe(x.dueDate)+'</td><td>'+statusBadge(x.status)+'</td><td>'+
    '<button data-print-type="invoice" data-print-id="'+safe(x.id)+'">Print</button></td></tr>');
-  return nav+panel("Create invoice",s.customers.length?create:'<p>Add a customer before creating an invoice.</p>')+
-   panel("Saved invoices",table(["Invoice","Customer","Amount","Paid","Balance","Due date","Status","Action"],rows))+
-   '<p class="muted">Invoices are draft bookkeeping records. Tax, line items, legal terms, and sending emails are not included yet.</p>';
+  return nav+(s.customers.length?editorPanel("Create invoice",create):panel("Getting started",'<p>Add a customer before creating an invoice.</p>'))+
+   panel("Invoices · "+s.invoices.length,table(["Invoice","Customer","Amount","Paid","Balance","Due date","Status","Action"],rows)+
+   '<p class="panel-note">These records do not calculate taxes or send invoice emails.</p>');
  }
  if(view==="Payments"){
   const due=s.invoices.filter(x=>Number(x.balance)>0.005);
@@ -206,8 +217,9 @@ function financeContent(){
    '<p>There are no unpaid invoices. Create an invoice to record a payment.</p>';
   const rows=s.payments.map(p=>'<tr><td>'+safe(p.paidDate)+'</td><td>'+safe(p.invoiceNumber)+'</td><td>'+safe(p.customerName)+'</td><td>'+
    money(p.amount)+'</td><td>'+safe(p.method)+'</td><td>'+safe(p.note)+'</td></tr>');
-  return nav+panel("Record a payment",form)+panel("Payment history",table(["Date","Invoice","Customer","Amount","Method","Note"],rows))+
-   '<p class="hint">Record payments you received outside this app. Nexus CRM does not charge cards, transfer funds, or verify bank deposits.</p>';
+  return nav+(due.length?editorPanel("Record payment",form):"")+
+   panel("Payments · "+s.payments.length,table(["Date","Invoice","Customer","Amount","Method","Note"],rows)+
+   '<p class="panel-note">Payments are recorded only; no card charge or bank transfer is made.</p>');
  }
  const x=s.financeReport||{estimates:0,invoices:0,acceptedEstimateTotal:0,invoiceTotal:0,paymentTotal:0,outstanding:0,overdueBalance:0};
  const cards='<div class="cards">'+
@@ -222,9 +234,9 @@ function financeContent(){
  return nav+cards+
   panel("Finance reporting",table(["Invoice status","Count"],statusCounts)+
     '<p>Accepted estimate pipeline: <strong>'+money(x.acceptedEstimateTotal)+'</strong></p>')+
-  panel("Export preview records",'<div class="actionrow">'+["estimates","invoices","payments"].map(t=>'<button data-export="'+t+'">'+
+  panel("Export records",'<div class="actionrow">'+["estimates","invoices","payments"].map(t=>'<button data-export="'+t+'">'+
    t.charAt(0).toUpperCase()+t.slice(1)+' CSV</button>').join("")+'</div>')+
-  '<p class="muted">Reports reflect recorded bookkeeping entries only. No bank reconciliation or tax reporting is provided.</p>';
+  '<p class="panel-note">Based on recorded entries. Bank reconciliation and tax reports are not included.</p>';
 }
 function saveCSV(kind){
  const rows={estimates:s.estimates,invoices:s.invoices,payments:s.payments}[kind];
@@ -455,8 +467,7 @@ function teamAccessContent(){
 }
 
 function managementContent(){
- const nav='<div class="actionrow">'+managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator).map(tab=>
-  '<button data-management="'+tab+'" class="'+(s.managementView===tab?"primary":"")+'">'+tab+'</button>').join("")+'</div>';
+ const nav=sectionNav(managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator),s.managementView,"management","Management sections");
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
  if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
  if(s.managementView==="Companies")return nav+companyAccessContent();
@@ -516,11 +527,10 @@ function currentTab(){
  if(s.page==="Account"){d.innerHTML=accountSecurityContent();return;}
  if(s.page==="Dashboard"){
   const x=s.dashboard||{customers:0,openJobs:0,jobPipeline:0};
-  d.innerHTML='<div class="cards">'+
+  d.innerHTML='<div class="cards overview-cards">'+
   '<div class="card">Customers<strong>'+x.customers+'</strong></div>'+
   '<div class="card">Open jobs<strong>'+x.openJobs+'</strong></div>'+'<div class="card">Employees<strong>'+s.employees.length+'</strong></div>'+'<div class="card">Appointments<strong>'+s.appointments.length+'</strong></div>'+
-  '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>'+
-  '';
+  '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>';
  }
  if(s.page==="Customers"){
   const editing=s.customers.find(c=>c.id===s.editingCustomer);
@@ -530,10 +540,10 @@ function currentTab(){
    '<div class="actionrow"><button class="primary" type="submit">'+(editing?"Save customer":"Add customer")+'</button>'+
    (editing?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>';
   const rows=s.customers.map(c=>'<tr><td>'+safe(c.name)+'</td><td>'+safe(c.email)+'</td><td>'+safe(c.phone)+'</td><td><button data-customer="'+safe(c.id)+'">Edit</button></td></tr>');
-  d.innerHTML=panel(editing?"Edit customer":"Add customer",form)+panel("Saved customers",table(["Name","Email","Phone","Action"],rows));
+  d.innerHTML=editorPanel(editing?"Edit customer":"Add customer",form,!!editing)+panel("Customers · "+s.customers.length,table(["Name","Email","Phone","Action"],rows));
  }
  if(s.page==="Operations"){
-  const nav='<div class="actionrow">'+["Jobs","Schedule","Employees"].map(t=>'<button data-operation="'+t+'" class="'+(s.operationsView===t?"primary":"")+'">'+t+'</button>').join("")+'</div>';
+  const nav=sectionNav(["Jobs","Schedule","Employees"],s.operationsView,"operation","Operations sections");
   if(s.operationsView==="Jobs"){
   const editing=s.jobs.find(j=>j.id===s.editingJob);
   const form=s.customers.length?
@@ -547,7 +557,7 @@ function currentTab(){
     (editing?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>':
     '<p>Add a customer in the Customers tab before creating jobs.</p>';
   const rows=s.jobs.map(j=>'<tr><td>'+safe(j.title)+'</td><td>'+safe(j.customerName)+'</td><td>'+money(j.amount)+'</td><td>'+statusBadge(j.status)+'</td><td>'+safe(j.scheduledDate||"Not scheduled")+'</td><td><button data-job="'+safe(j.id)+'">Edit</button></td></tr>');
-  d.innerHTML=nav+panel(editing?"Edit job":"Create job",form)+panel("Saved jobs",table(["Job","Customer","Amount","Status","Date","Action"],rows));
+  d.innerHTML=nav+(s.customers.length?editorPanel(editing?"Edit job":"Create job",form,!!editing):panel("Getting started",form))+panel("Jobs · "+s.jobs.length,table(["Job","Customer","Amount","Status","Date","Action"],rows));
 
   }else if(s.operationsView==="Employees"){
    const e=s.employees.find(x=>x.id===s.editingEmployee);
@@ -558,8 +568,8 @@ function currentTab(){
     '<div class="actionrow"><button class="primary" type="submit">'+(e?"Save employee":"Add employee")+'</button>'+
     (e?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>';
    const rows=s.employees.map(e=>'<tr><td>'+safe(e.name)+'</td><td>'+safe(e.jobTitle)+'</td><td>'+safe(e.email)+'</td><td>'+statusBadge(e.status)+'</td><td><button data-employee="'+safe(e.id)+'">Edit</button></td></tr>');
-   d.innerHTML=nav+panel(e?"Edit employee":"Add employee",form)+panel("Employees",table(["Name","Role","Email","Status","Action"],rows))+
-     '<p class="muted">This is a staff directory. Employee login accounts and payroll are not enabled.</p>';
+   d.innerHTML=nav+editorPanel(e?"Edit employee":"Add employee",form,!!e)+panel("Employees · "+s.employees.length,table(["Name","Role","Email","Status","Action"],rows)+
+     '<p class="panel-note">Directory records are separate from Team Access logins.</p>');
   }else{
    const e=s.appointments.find(x=>x.id===s.editingAppointment);
    const jobs=s.jobs.map(j=>'<option value="'+safe(j.id)+'" '+(j.id===e?.jobId?"selected":"")+'>'+safe(j.title)+'</option>').join("");
@@ -574,8 +584,9 @@ function currentTab(){
     (e?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>':
     '<p>Create a job first to schedule an appointment.</p>';
    const rows=s.appointments.map(x=>'<tr><td>'+safe(x.appointmentDate)+'</td><td>'+safe(x.appointmentTime)+'</td><td>'+safe(x.jobTitle)+'</td><td>'+safe(x.employeeName)+'</td><td>'+safe(x.location)+'</td><td><button data-appointment="'+safe(x.id)+'">Edit</button></td></tr>');
-   d.innerHTML=nav+panel(e?"Edit appointment":"Schedule appointment",form)+panel("Appointments",table(["Date","Time","Job","Employee","Location","Action"],rows))+
-   '<p class="muted">Appointment times are local business times; external calendar sync is not connected.</p>';
+   d.innerHTML=nav+(s.jobs.length?editorPanel(e?"Edit appointment":"Schedule appointment",form,!!e):panel("Getting started",form))+
+     panel("Appointments · "+s.appointments.length,table(["Date","Time","Job","Employee","Location","Action"],rows)+
+     '<p class="panel-note">Times are local to your business. Calendar synchronization is not enabled.</p>');
   }
  }
  if(s.page==="Finance")d.innerHTML=financeContent();
