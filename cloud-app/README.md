@@ -1,3 +1,13 @@
+# Nexus CRM 3.0 — Invitation-only Multi-Company Pilot
+
+The five-tab private CRM now has **Management → Companies** for the Nexus platform operator and one-time invitation acceptance for first owners of separate companies. The upgrade uses the existing D1 database and free Pages hosting. No public sign-up, automated email verification, subscription checkout, MFA or production certification is enabled.
+
+**Full guide:** [Nexus CRM 3.0 multi-company pilot](MULTI_COMPANY_PILOT.md)
+
+**Current verified checks:** Migration applied, SQL syntax and guarded invitation operations verified on production D1 using non-mutating checks, and source/UI syntax checks passed. A real two-account signed-in isolation test is still required before production access. Use only fictional test records.
+
+---
+
 
 ## 2.9 — Zero-subscription security and backup enhancements (November 16, 2026)
 
