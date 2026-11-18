@@ -11,8 +11,11 @@ export default async function handler(req,res){
   if(!checkWrite(req,res))return;
   if(!validProduct(req.body))return respond(res,400,{error:"Invalid product"});
   const p=req.body;
-  const record={company_id:a.companyId,sku:p.sku,name:p.name.trim(),price_cents:p.price_cents,stock_quantity:p.stock_quantity};
-  const items=await database("/rest/v1/nexus_pos_products?select=id",{method:"POST",body:record,prefer:"return=representation"});
-  return respond(res,201,{id:items?.[0]?.id});
+  const id=await database("/rest/v1/rpc/nexus_create_pos_product",{
+   method:"POST",
+   body:{p_company_id:a.companyId,p_actor_id:a.userId,p_sku:p.sku,p_name:p.name.trim(),p_price_cents:p.price_cents,p_stock_quantity:p.stock_quantity}
+  });
+  if(typeof id!=="string")throw Error("Missing product reference");
+  return respond(res,201,{id});
  }catch{return respond(res,503,{error:"Product service unavailable or request rejected"})}
 }
