@@ -34,7 +34,7 @@ async function call(url,{method="GET",role="owner",body=null,headers={},options=
  const d=db(role,options);
  const h=new Headers(headers);
  if(!h.has("Cookie"))h.set("Cookie",cookie);
- if(method!=="GET"&&body!==null){h.set("Content-Type","application/json");h.set("Origin","https://pos.test");h.set("X-Nexus-CSRF","csrf-test")}
+ if(method!=="GET"&&body!==null){h.set("Content-Type","application/json");h.set("Origin","https://pos.test");if(!h.has("X-Nexus-CSRF"))h.set("X-Nexus-CSRF","csrf-test")}
  const request=new Request("https://pos.test"+url,{method,headers:h,body:body===null?undefined:JSON.stringify(body)});
  const response=await onRequest({request,env:{DB:d}});
  return {response,data:await response.json(),db:d};
