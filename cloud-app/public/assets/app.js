@@ -183,7 +183,7 @@ async function loadPos(){
  draw();
 }
 function posContent(){
- const nav=sectionNav(["Checkout","Inventory","Customers","Reports"],s.posView,"posView","POS sections");
+ const nav=sectionNav(["Checkout","Inventory","Customers","Reports"],s.posView,"posview","POS sections");
  const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales are recorded only: no credit card is charged, and no tax calculation is performed.</p>');
  if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
  if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
@@ -793,7 +793,7 @@ document.addEventListener("click",async e=>{
  if(b.dataset.export){saveCSV(b.dataset.export);return}
  if(b.dataset.appointment){s.page="Operations";s.operationsView="Schedule";s.editingAppointment=b.dataset.appointment;draw();return}
  if(b.dataset.action==="cancel-edit"){s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();return}
- if(b.dataset.posView){s.posView=b.dataset.posView;draw();return}
+ if(b.dataset.posview){s.posView=b.dataset.posview;draw();return}
  if(b.dataset.posAdd){const p=s.posProducts.find(x=>x.id===b.dataset.posAdd);if(p&&p.active&&(s.posCart[p.id]||0)<p.stock_quantity){s.posCart[p.id]=(s.posCart[p.id]||0)+1;draw()}return}
  if(b.dataset.posRemove){const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
  if(b.dataset.action==="pos-clear"){s.posCart={};draw();return}
