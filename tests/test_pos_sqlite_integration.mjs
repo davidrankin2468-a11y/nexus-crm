@@ -194,6 +194,23 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
   assert.throws(()=>f.sql.prepare("UPDATE pos_sales SET customer_id=? WHERE id=?").run(customerB,saleId),/POS CRM customer must belong/);
   assert.equal(f.sql.prepare("SELECT customer_id FROM pos_sales WHERE id=?").get(saleId).customer_id,customerA);
  });
+ await t.test("POS export includes only company records and excludes credentials",async()=>{
+  const a=await requestPOS("/api/pos/export");
+  assert.equal(a.status,200);
+  assert.equal(a.data.format,"nexus-pos-company-export-v1");
+  assert.equal(a.data.companyScoped,true);
+  assert.equal(a.data.encryptedOnServer,false); // Client must encrypt before writing a file.
+  assert.equal(a.data.cardDataIncluded,false);
+  assert.ok(a.data.records.pos_sales.length>=2);
+  assert.ok(a.data.records.pos_products.some(x=>x.id===productA));
+  assert.ok(!a.data.records.pos_products.some(x=>x.id===productB));
+  assert.ok(a.data.records.pos_sales.some(x=>x.customer_id===customerA));
+  assert.ok(!JSON.stringify(a.data).includes("valid-csrf"));
+  const admin=await requestPOS("/api/pos/export",{token:tokB});
+  assert.equal(admin.status,403); // Only a company owner can export records.
+  const employee=await requestPOS("/api/pos/export",{token:tokEmployee});
+  assert.equal(employee.status,403);
+ });
  await t.test("voiding a pending sale restores reserved inventory once; does not refund or charge",async()=>{
   const before=f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity;
   const r=await requestPOS("/api/pos/sales/void",{method:"POST",body:{sale_id:saleId,confirm:"VOID UNPAID SALE"}});
