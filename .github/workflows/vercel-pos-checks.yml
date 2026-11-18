@@ -68,6 +68,7 @@ jobs:
           node --check api/square/sandbox-connectivity.js
           node --check api/square/sandbox-prepare.js
           node --check api/square/sandbox-submit.js
+          node --check api/square/sandbox-webhook.js
           node --check lib/nexus-square-submit-attempt.js
       - name: Run POS security and API tests
         run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs tests/test_square_payment_transport.mjs tests/test_square_attempt.mjs tests/test_square_prepare_route.mjs tests/test_square_submit_attempt.mjs
