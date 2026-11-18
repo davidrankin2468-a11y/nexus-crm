@@ -28,7 +28,12 @@ export async function onRequest({request,env}){
    const v=await bodyOf(request);
    if(typeof v.sku!=="string"||!/^[-A-Za-z0-9_]{1,60}$/.test(v.sku)||typeof v.name!=="string"||!v.name.trim()||v.name.length>200||!Number.isSafeInteger(v.price_cents)||v.price_cents<0||v.price_cents>100000000||!Number.isSafeInteger(v.stock_quantity)||v.stock_quantity<0||v.stock_quantity>1000000)return json({error:"Invalid product"},400);
    const id=crypto.randomUUID(),t=now();
-   await db.prepare("INSERT INTO pos_products(id,tenant_id,sku,name,price_cents,stock_quantity,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").bind(id,tenant,v.sku,v.name.trim(),v.price_cents,v.stock_quantity,t,t).run();
+   const writes=[db.prepare("INSERT INTO pos_products(id,tenant_id,sku,name,price_cents,stock_quantity,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").bind(id,tenant,v.sku,v.name.trim(),v.price_cents,v.stock_quantity,t,t)];
+   if(v.stock_quantity>0){
+    writes.push(db.prepare("INSERT INTO pos_inventory_movements(id,tenant_id,product_id,sale_id,quantity_delta,reason,created_at) VALUES(?,?,?,?,?,'restock',?)").bind(crypto.randomUUID(),tenant,id,null,v.stock_quantity,t));
+   }
+   // Both rows commit together, so opening stock always has an auditable movement.
+   await db.batch(writes);
    return json({id},201);
   }
   if(path==="/api/pos/sales"&&method==="GET"){
