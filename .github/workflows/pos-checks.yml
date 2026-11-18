@@ -23,6 +23,10 @@ jobs:
           node-version: '22'
       - name: Cloudflare POS API tests
         run: node --test tests/test_cloudflare_pos.mjs
+      - name: Browser retry and company-scoping tests
+        run: node --test tests/test_pos_retry_client.mjs
+      - name: Main CRM browser JavaScript syntax
+        run: node --check cloud-app/public/assets/app.js
       - name: POS API JavaScript syntax
         run: node --check 'cloud-app/functions/api/pos/[[path]].js'
       - name: POS browser JavaScript syntax
