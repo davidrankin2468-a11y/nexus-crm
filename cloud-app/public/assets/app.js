@@ -633,7 +633,13 @@ function currentTab(){
   d.innerHTML='<div class="cards overview-cards">'+
   '<div class="card">Customers<strong>'+x.customers+'</strong></div>'+
   '<div class="card">Open jobs<strong>'+x.openJobs+'</strong></div>'+'<div class="card">Employees<strong>'+s.employees.length+'</strong></div>'+'<div class="card">Appointments<strong>'+s.appointments.length+'</strong></div>'+
-  '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>';
+  '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>'+
+   // POS belongs inside Finance; use the existing CRM session and tenant context.
+   (["owner","admin"].includes(s.account?.role)
+     ?panel("Sales & Finance · Nexus POS",'<p>Use POS checkout, inventory, CRM customers, and sales reports inside Finance. Test sales remain pending/unpaid; no Square charge is made.</p>'+
+       '<div class="actionrow"><button type="button" class="primary" data-action="open-integrated-pos">Open POS inside CRM</button>'+
+       '<button type="button" data-action="open-finance">Open Sales & Finance</button></div>')
+     :"");
  }
  if(s.page==="Customers"){
   const editing=s.customers.find(c=>c.id===s.editingCustomer);
@@ -798,6 +804,14 @@ document.addEventListener("click",async e=>{
  }
  if(b.dataset.action==="hide-recovery"){s.newRecoveryCodes=null;draw();notice("Recovery codes hidden.");return}
  if(b.dataset.page){s.newRecoveryCodes=null;s.newMfaSecret=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
+ if(b.dataset.action==="open-integrated-pos"){
+  if(!s.account||!["owner","admin"].includes(s.account.role)){notice("POS access denied.");return}
+  s.page="Finance";s.financeView="POS";draw();notice("");await loadPos();return;
+ }
+ if(b.dataset.action==="open-finance"){
+  if(!s.account||!["owner","admin"].includes(s.account.role)){notice("Finance access denied.");return}
+  s.page="Finance";s.financeView="Estimates";draw();notice("");return;
+ }
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");if(s.financeView==="POS")await loadPos();return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
  if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
