@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posView:"Checkout",posError:"",posBusy:false,editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -189,13 +189,14 @@ function posPendingRead(){
   const value=JSON.parse(sessionStorage.getItem(posPendingStorageKey())||"null");
   if(!value||typeof value.idempotency_key!=="string"||!/^[-A-Za-z0-9_]{8,100}$/.test(value.idempotency_key)||!Array.isArray(value.items)||value.items.length<1||value.items.length>50)return null;
   if(value.items.some(x=>!x||typeof x.product_id!=="string"||!Number.isSafeInteger(x.quantity)||x.quantity<1))return null;
+  if(value.customer_id!==undefined&&value.customer_id!==null&&typeof value.customer_id!=="string")return null;
   return value;
  }catch{return null}
 }
 function posPendingStart(items){
  const existing=posPendingRead();
  if(existing)return existing;
- const attempt={idempotency_key:crypto.randomUUID().replace(/-/g,""),items,tax_cents:0};
+ const attempt={idempotency_key:crypto.randomUUID().replace(/-/g,""),items,tax_cents:0,customer_id:s.posCustomerId||null};
  try{sessionStorage.setItem(posPendingStorageKey(),JSON.stringify(attempt))}
  catch{throw Error("Safe checkout storage is unavailable. No sale was sent. Enable session storage and retry.")}
  return attempt;
@@ -216,7 +217,7 @@ async function posCommit(){
  try{
   const receipt=await request("/api/pos/sales","POST",attempt);
   if(!receipt?.id)throw Error("Sale response did not contain a receipt reference");
-  posPendingFinish();s.posCart={};await loadPos();
+  posPendingFinish();s.posCart={};s.posCustomerId="";await loadPos();
   notice("Sale "+receipt.id+" recorded as pending/unpaid. No card was charged.");
  }catch(err){
   notice("Sale outcome not yet confirmed: "+err.message+". Retry the same pending sale to avoid a duplicate.");
@@ -235,12 +236,15 @@ function posContent(){
  const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert;
  if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
  if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
- if(s.posView==="Reports"){const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);return nav+warn+panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","Status","Amount"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td></tr>')))}
+ if(s.posView==="Reports"){const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);return nav+warn+panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td></tr>')))}
  if(s.posView==="Inventory")return nav+warn+editorPanel("Add product",'<form data-form="pos-product" class="gridform"><label>SKU<input required name="sku" pattern="[-A-Za-z0-9_]+" maxlength="60"></label><label>Product name<input required name="name" maxlength="200"></label><label>Price ($)<input required name="price" type="number" min="0" step=".01" max="1000000"></label><label>Starting stock<input required name="stock_quantity" type="number" min="0" step="1" max="1000000"></label><button class="primary" type="submit">Save product</button></form>')+panel("Inventory",table(["SKU","Name","Price","Stock"],s.posProducts.map(p=>'<tr><td>'+safe(p.sku)+'</td><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td></tr>')));
  const rows=Object.entries(s.posCart).map(([id,q])=>({p:s.posProducts.find(x=>x.id===id),q})).filter(x=>x.p&&x.q>0);
  const total=rows.reduce((a,x)=>a+x.p.price_cents*x.q,0);
  return nav+warn+panel("Products",table(["Item","Price","Stock","Add"],s.posProducts.filter(x=>x.active).map(p=>'<tr><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td><td><button data-pos-add="'+safe(p.id)+'" '+(pending||s.posBusy||p.stock_quantity<=(s.posCart[p.id]||0)?"disabled":"")+'>Add</button></td></tr>')))+
- panel("Checkout cart",table(["Item","Qty","Subtotal","Remove"],rows.map(x=>'<tr><td>'+safe(x.p.name)+'</td><td>'+safe(x.q)+'</td><td>'+money(x.p.price_cents*x.q/100)+'</td><td><button data-pos-remove="'+safe(x.p.id)+'">−1</button></td></tr>'))+
+ panel("Checkout cart",'<label>CRM customer (optional)<select data-pos-customer="1" '+(pending||s.posBusy?"disabled":"")+'>'
+  +'<option value="">Walk-in / no customer</option>'
+  +s.customers.map(c=>'<option value="'+safe(c.id)+'" '+(c.id===s.posCustomerId?"selected":"")+'>'+safe(c.name)+'</option>').join("")
+  +'</select></label>'+table(["Item","Qty","Subtotal","Remove"],rows.map(x=>'<tr><td>'+safe(x.p.name)+'</td><td>'+safe(x.q)+'</td><td>'+money(x.p.price_cents*x.q/100)+'</td><td><button data-pos-remove="'+safe(x.p.id)+'">−1</button></td></tr>'))+
  '<h3>Total before tax: '+money(total/100)+'</h3><div class="actionrow"><button data-action="pos-record" class="primary" '+(!total||s.posBusy||pending?"disabled":"")+'>Record sale (unpaid)</button><button data-action="pos-clear" '+(pending||s.posBusy?"disabled":"")+'>Clear cart</button></div>');
 }
 const financeViews=["Estimates","Invoices","Payments","Reports","POS"];
@@ -865,6 +869,13 @@ document.addEventListener("click",async e=>{
  if(b.dataset.action==="retry"){await start();return}
  if(b.dataset.action==="refresh"){try{await refresh();if(s.page==="Finance"&&s.financeView==="POS")await loadPos();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
  if(b.dataset.action==="logout"){try{await request("/api/logout","POST",{});s.account=null;s.csrf="";authScreen("login");notice("Signed out.")}catch(err){notice(err.message)}}
+});
+document.addEventListener("change",e=>{
+ if(!e.target?.matches?.('select[data-pos-customer]'))return;
+ if(posPendingRead()||s.posBusy){draw();return}
+ const id=e.target.value;
+ if(id&&!s.customers.some(c=>c.id===id)){notice("CRM customer is unavailable");draw();return}
+ s.posCustomerId=id;draw();
 });
 document.addEventListener("submit",async e=>{
  const f=e.target;if(!f.dataset.form)return;
