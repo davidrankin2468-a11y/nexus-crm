@@ -2,6 +2,48 @@
 
 This file documents the **final deployment gate**. Do **not** merge pull request #1 into `main`, promote a deployment, enable charges, or migrate production data without explicit owner approval.
 
+## Current pre-deployment checklist — verified November 18, 2026
+
+**Scope:** prepare the software, sandbox, and development database **before the final Vercel preview acceptance step**. Production release is a separate approval and is not authorized.
+
+**Status key:** `[x]` completed/verified, `[ ]` not yet completed. A completed *foundation* is not the same as a tested commercial product.
+
+| Checked | Work item | Current verified outcome / next action |
+| --- | --- | --- |
+| [x] | Five-tab CRM + POS source | Finance includes the POS workflows; original CRM source preserved. |
+| [x] | GitHub branch and review | `feature/nexus-pos-crm-foundation`, draft PR #1, no merge to `main`. |
+| [x] | Automated testing | `Nexus POS checks` and `Vercel POS backend checks` passed on the source commit before this checklist edit. They are not substitutes for a live browser test. |
+| [x] | Development POS databases | Cloudflare D1 staging tested using fictional records; Supabase development POS schema has RLS. No production POS migration was applied. |
+| [x] | Fictional company records | Two `Nexus POS QA Company` records exist in development Supabase. They are not yet linked to test users. |
+| [x] | Vercel POS code and mobile page | Secure invite-only development page `/pos-secure`, authenticated API routes, company authorization, inventory audit and unpaid receipt source implemented. Not yet verified live at the current PR commit. |
+| [x] | Vercel non-secret environment settings | `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` set for **Preview** and this feature branch only. |
+| [x] | License/subscription *database foundation* | Development license-plan, company-license and audit tables exist, RLS is enabled, user reads are revoked; no active licenses/plans or subscription processing. |
+| [x] | Square *sandbox groundwork* | Sandbox-only status and webhook-signature/input validation helpers, covered by automated tests. No Square account connected or provider transaction run. |
+| [ ] | Approved development Auth accounts | **Blocked — owner/provider action.** Supabase development currently has **0 Auth users**. Create approved test accounts and verify email/password login without exposing passwords. |
+| [ ] | Company membership and isolation tests | **Blocked by Auth accounts.** Currently **0** development company memberships; assign two distinct test users to two companies; run cross-company tests and employee-denial checks. |
+| [ ] | Supabase privileged server credential | **Blocked — owner/provider action.** `SUPABASE_SERVICE_ROLE_KEY` is **missing** from Vercel `nexus-crm-ikol` preview config. Add privately, encrypted, scoped to this branch only. |
+| [ ] | Square sandbox account and credentials | **Blocked — owner/provider action.** Create/connect a Square *Sandbox* application, assign sandbox credentials securely; do not use production keys. |
+| [ ] | Full Square payment integration | Not implemented. Add sandbox-only server payment requests, signature-verified webhook receiver, event deduplication, settlement reconciliation, failed-payment handling and safe refunds. No real charges. |
+| [ ] | Subscriptions and commercial license enforcement | Not implemented. Design plan catalog, monthly vs one-time entitlements, activation/expiry, company provisioning, webhook reconciliation, revocation and isolation. The database alone does not grant a working license. |
+| [ ] | Tax/receipt/accounting readiness | No calculated sales tax, compliant finalized receipts, or production financial reconciliation yet. Pilot receipts explicitly say **pending/unpaid**. |
+| [ ] | Operational/security release audit | MFA, authentication abuse limits, restore test, access monitoring, privacy/support policies, accessibility, mobile testing and payment safety review still needed. |
+| [ ] | Updated Cloudflare preview verified | The Cloudflare preview for the latest prior commit was **queued**, not confirmed successful. Older preview deployments exist; verify the deployed SHA before claiming it includes new changes. |
+| [ ] | Final Vercel *preview* deployment & browser acceptance | **Keep last.** Earlier Vercel previews exist, but none verified against the current PR head. After other gates, confirm preview SHA, sign-in, tenant isolation, unpaid checkout, prints, mobile UX, auth failure modes and no card charges. |
+| [ ] | Commercial production launch | Not authorized. Requires successful preview testing, payment/tax readiness, separate production controls and explicit owner approval. |
+
+### Latest observed deployment and account notes
+- GitHub PR: [Nexus POS + CRM #1](https://github.com/davidrankin2468-a11y/nexus-crm/pull/1). Draft, mergeable, production branch unchanged.
+- Vercel has older automatic preview deployments marked `READY`; this **does not mean the current development commit was deployed or that the POS backend is configured**.
+- Vercel project `nexus-crm-ikol` has the two public/development Supabase preview settings, but **no configured server secret**.
+- Supabase development counts when checked: **0 Auth users, 2 fictional QA companies, 0 memberships, 0 license plans, 0 licenses, 0 license events**.
+- Cloudflare `nexus-crm-secure` latest development deployment was **queued**. Continue to use a previously *successful* preview for observational tests until a newer commit is confirmed deployed.
+- Alerts: existing **Nexus POS Blocker Alerts** watch checks for new or materially changed blockers; do not repeat unresolved unchanged problems.
+
+### User action needed before authenticated live testing
+1. Create approved test-user identities directly in the development Supabase Auth console; do not send account passwords in chat.
+2. Add the development-only private Supabase service key to the protected Vercel Preview environment on the feature branch.
+3. Connect Square's developer **Sandbox** through protected settings when ready to test simulated payments, not live card charges.
+
 ## Intended architecture
 - Source: `davidrankin2468-a11y/nexus-crm`, branch `feature/nexus-pos-crm-foundation`.
 - Final preview host: Vercel project `nexus-crm-ikol`, team `nexus-e992`; no production target.
