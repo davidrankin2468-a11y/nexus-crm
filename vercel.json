@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/pos",
+      "destination": "/pos-demo/index.html"
+    },
+    {
+      "source": "/pos/",
+      "destination": "/pos-demo/index.html"
+    }
+  ]
+}
