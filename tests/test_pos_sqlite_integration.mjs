@@ -17,6 +17,7 @@ function sqliteD1(){
  CREATE TABLE customers(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL REFERENCES tenants(id),name TEXT NOT NULL, UNIQUE(tenant_id,id));`);
  sql.exec(readFileSync("cloud-app/migrations/007_pos_multi_company.sql","utf8"));
  sql.exec(readFileSync("cloud-app/migrations/011_pos_customer_tenant_integrity.sql","utf8"));
+ sql.exec(readFileSync("cloud-app/migrations/012_license_catalog_staging.sql","utf8"));
  const db={
   prepare(query){
    const state={args:[]};
@@ -74,6 +75,25 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
  const customerB="22222222-2222-4222-8222-222222222222";
  f.sql.prepare("INSERT INTO customers(id,tenant_id,name) VALUES (?,'tenant-a','Customer A')").run(customerA);
  f.sql.prepare("INSERT INTO customers(id,tenant_id,name) VALUES (?,'tenant-b','Customer B')").run(customerB);
+ await t.test("license plans are draft and cannot activate a company without verified payment",async()=>{
+  const a=await requestPOS("/api/pos/licensing");
+  assert.equal(a.status,200);
+  assert.equal(a.data.plans.length,3);
+  assert.deepEqual(a.data.plans.map(x=>x.price_cents),[4900,9900,14900]);
+  assert.equal(a.data.license.status,"unlicensed");
+  assert.equal(a.data.proposedOnly,true);
+  assert.equal(a.data.paymentProcessing,false);
+  assert.equal(a.data.purchasesEnabled,false);
+  const b=await requestPOS("/api/pos/licensing",{token:tokB});
+  assert.equal(b.data.license.status,"unlicensed");
+  const notAllowed=await requestPOS("/api/pos/licensing",{token:tokEmployee});
+  assert.equal(notAllowed.status,403);
+  const attemptedActivation=await requestPOS("/api/pos/licensing",{
+   method:"POST",body:{status:"active",plan_code:"crm_pro_monthly_draft"}
+  });
+  assert.equal(attemptedActivation.status,404);
+  assert.equal(f.sql.prepare("SELECT COUNT(*) AS n FROM nexus_tenant_licenses").get().n,0);
+ });
  await t.test("company A creates a product without accepting forged tenant ID",async()=>{
   const r=await requestPOS("/api/pos/products",{method:"POST",body:product("SKU-A",550,2,"tenant-b")});
   assert.equal(r.status,201);
