@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
-import {SQUARE_SANDBOX_API_ORIGIN,squareSandboxConfigured,verifySquareSandboxSignature,validateSandboxPaymentDraft} from "../lib/nexus-square-sandbox.js";
+import {SQUARE_SANDBOX_API_ORIGIN,squareSandboxConfigured,verifySquareSandboxSignature,validateSandboxPaymentDraft,buildSquareSandboxPaymentPayload,inspectSquareSandboxPaymentResponse} from "../lib/nexus-square-sandbox.js";
 import status from "../api/square/sandbox-status.js";
 const url="https://nexus.example.invalid/api/square/webhooks";
 const key="fictional-sandbox-signing-key";
@@ -40,4 +40,56 @@ test("sandbox status never claims payment is enabled or leaks secrets",()=>{
   assert.equal(JSON.stringify(r.body).includes(key),false);
   const bad=res();status({method:"POST"},bad);assert.equal(bad.code,405);
  }finally{if(old===undefined)delete process.env.SQUARE_ENVIRONMENT;else process.env.SQUARE_ENVIRONMENT=old}
+});
+
+test("Square idempotency keys follow the documented 45-character limit",()=>{
+ const d={source_id:"cnon:card-nonce-ok",idempotency_key:"q".repeat(45),amount_cents:375,currency:"USD"};
+ assert.equal(validateSandboxPaymentDraft(d),true);
+ assert.equal(validateSandboxPaymentDraft({...d,idempotency_key:"q".repeat(46)}),false);
+ assert.equal(validateSandboxPaymentDraft({...d,idempotency_key:"bad key spaces"}),false);
+ assert.equal(validateSandboxPaymentDraft({...d,amount_cents:1.01}),false);
+});
+
+test("sandbox request body is cents-based and carries idempotency and location",()=>{
+ const d={source_id:"cnon:card-nonce-ok",idempotency_key:"checkout-attempt-100",amount_cents:3199,currency:"USD"};
+ const p=buildSquareSandboxPaymentPayload(d,{locationId:"FAKE_SANDBOX_LOC_01",referenceId:"fictional-receipt-001"});
+ assert.deepEqual(p,{
+  source_id:"cnon:card-nonce-ok",idempotency_key:"checkout-attempt-100",
+  amount_money:{amount:3199,currency:"USD"},
+  location_id:"FAKE_SANDBOX_LOC_01",reference_id:"fictional-receipt-001"
+ });
+ assert.equal(JSON.stringify(p).includes("card_number"),false);
+ assert.throws(()=>buildSquareSandboxPaymentPayload(d,{locationId:"",referenceId:"fictional-receipt-001"}),TypeError);
+ assert.throws(()=>buildSquareSandboxPaymentPayload({...d,cvv:"123"},{locationId:"FAKE_SANDBOX_LOC_01",referenceId:"x"}),TypeError);
+ assert.throws(()=>buildSquareSandboxPaymentPayload(d,{locationId:"FAKE_SANDBOX_LOC_01",referenceId:"x".repeat(41)}),TypeError);
+});
+
+test("mocked success requires matching amount/location and reconciliation",()=>{
+ const payload={payment:{id:"fake-square-payment-100",status:"COMPLETED",amount_money:{amount:3199,currency:"USD"},location_id:"FAKE_SANDBOX_LOC_01"}};
+ const context={amountCents:3199,locationId:"FAKE_SANDBOX_LOC_01"};
+ const result=inspectSquareSandboxPaymentResponse(200,payload,context);
+ assert.deepEqual(result,{providerCompleted:true,reconciliationRequired:true,paymentId:"fake-square-payment-100"});
+ assert.deepEqual(inspectSquareSandboxPaymentResponse(200,payload,{...context,amountCents:1234}),
+  {providerCompleted:false,reconciliationRequired:false,reason:"AMOUNT_MISMATCH"});
+ assert.deepEqual(inspectSquareSandboxPaymentResponse(200,payload,{...context,locationId:"OTHER_SANDBOX_LOC"}),
+  {providerCompleted:false,reconciliationRequired:false,reason:"LOCATION_MISMATCH"});
+});
+
+test("mocked declines, failed payments, and pending status cannot mark a sale paid",()=>{
+ const context={amountCents:3199,locationId:"FAKE_SANDBOX_LOC_01"};
+ assert.equal(inspectSquareSandboxPaymentResponse(400,{errors:[{code:"CARD_DECLINED"}]},context).providerCompleted,false);
+ assert.equal(inspectSquareSandboxPaymentResponse(200,{payment:{id:"fake",status:"PENDING",amount_money:{amount:3199,currency:"USD"},location_id:"FAKE_SANDBOX_LOC_01"}},context).providerCompleted,false);
+ assert.equal(inspectSquareSandboxPaymentResponse(200,{},context).providerCompleted,false);
+ assert.equal(inspectSquareSandboxPaymentResponse(200,{payment:{id:"fake",status:"COMPLETED",amount_money:{amount:3199,currency:"USD"},location_id:"FAKE_SANDBOX_LOC_01"}},context).reconciliationRequired,true);
+});
+
+test("mock retry has the same request key and response ID (provider dedup still untested)",()=>{
+ const draft={source_id:"cnon:card-nonce-ok",idempotency_key:"stable-checkout-key-001",amount_cents:999,currency:"USD"};
+ const opts={locationId:"FAKE_SANDBOX_LOC_01",referenceId:"fictional-sale-123"};
+ const first=buildSquareSandboxPaymentPayload(draft,opts);
+ const retry=buildSquareSandboxPaymentPayload(draft,opts);
+ assert.deepEqual(retry,first);
+ const providerResult={payment:{id:"fake-duplicate-return",status:"COMPLETED",amount_money:{amount:999,currency:"USD"},location_id:"FAKE_SANDBOX_LOC_01"}};
+ assert.equal(inspectSquareSandboxPaymentResponse(200,providerResult,{amountCents:999,locationId:opts.locationId}).paymentId,"fake-duplicate-return");
+ // The in-memory mock cannot prove real Square deduplication: test live in Sandbox after private configuration.
 });
