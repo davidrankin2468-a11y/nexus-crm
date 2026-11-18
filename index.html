@@ -123,7 +123,7 @@ body{padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)
 </head>
 <body>
 <div class="app">
-<aside><div class="brand">◈ NEXUS <span>CRM</span></div><div class="navbox" id="nav" role="navigation" aria-label="CRM main tabs"></div><div class="sidebar-foot">Nexus Software Solutions<br>Version 2.4 · Live Design Preview</div></aside>
+<aside><div class="brand">◈ NEXUS <span>CRM</span></div><div class="navbox" id="nav" role="navigation" aria-label="CRM main tabs"></div><div class="sidebar-foot">Nexus Software Solutions<br>Version 2.4 · POS-enabled Preview</div></aside>
 <main><div class="top"><div><div class="eyebrow">Nexus Business Suite</div><h1 id="heading">Dashboard</h1><p class="muted" id="intro">Manage your business in one place</p></div><span class="tag">● Interactive browser preview · v2.4</span></div>
 <div class="alert">PUBLIC DEMO · iPhone &amp; Android compatible — Use fictional information only. Changes are saved in this browser, not in a shared cloud account. <a href="https://nexus-crm-showcase.pages.dev/" target="_blank" rel="noopener noreferrer">Explore the product website and request early access ↗</a></div>
 <div class="tabs" id="tabs" aria-label="Section tools"></div><div id="stage" aria-live="polite"></div>
@@ -131,10 +131,10 @@ body{padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)
 <script>
 
 "use strict";
-const VERSION="2.4", STORAGE="nexus-crm-demo-2.4", LEGACY="nexus-crm-demo-2.3";
+const VERSION="2.4 + POS Preview", STORAGE="nexus-crm-demo-2.4", LEGACY="nexus-crm-demo-2.3";
 const STATUSES=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const TABS={"Dashboard":["Overview","Recent Activity"],"Customers":["Directory","Customer History"],"Operations":["Jobs","Schedule","Employees","Time Tracking"],"Finance":["Estimates","Invoices","Payments","Reports"],"Management":["Company Settings","Security","Backups","Cloud Sync","Licensing"]};
-const DESCRIPTIONS={"Dashboard":"Your company at a glance","Customers":"Profiles, contact details, and job history","Operations":"Jobs, scheduling, employees and hours","Finance":"Estimates, invoices, payments and reports","Management":"Settings, browser backups and system readiness"};
+const TABS={"Dashboard":["Overview","Recent Activity"],"Customers":["Directory","Customer History"],"Operations":["Jobs","Schedule","Employees","Time Tracking"],"Finance":["Estimates","Invoices","Payments","Reports","POS"],"Management":["Company Settings","Security","Backups","Cloud Sync","Licensing"]};
+const DESCRIPTIONS={"Dashboard":"Your company at a glance","Customers":"Profiles, contact details, and job history","Operations":"Jobs, scheduling, employees and hours","Finance":"Estimates, invoices, payments, reports and POS","Management":"Settings, browser backups and system readiness"};
 const $=id=>document.getElementById(id);
 const safe=x=>String(x==null?"":x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const usd=x=>Number(x||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
@@ -349,6 +349,7 @@ function showManagement(){
  if(subTab==="Security")return panel("Security and accounts",'<p><b>Demo only:</b> This public preview has no user login or permission enforcement. Do not enter real customer, employee, password, or payment information.</p><p>Production release requires secure login, tenant isolation, authorization tests, backups, HTTPS, MFA support, and an audit trail.</p>');
  return panel("Licensing and updates",'<p>The demo does not enforce a paid license. Future commercial licensing requires server-verified entitlements, signed license records, billing and renewal handling, and an offline activation policy.</p><p>Deployment updates are versioned in GitHub and published through Cloudflare Pages.</p>');
 }
+function showPOS(){return '<div class="panel"><h2>Nexus POS · Checkout, Inventory, Customers &amp; Reports</h2><p class="note">Interactive development preview: fictional items and browser-only records. No real payments, tax filing, or multi-company synchronization. Your other CRM tabs remain unchanged.</p><iframe title="Nexus POS interactive demo" src="/pos-demo/index.html" loading="lazy" style="display:block;width:100%;min-height:900px;border:1px solid #36516a;border-radius:10px;background:#0b1425" referrerpolicy="no-referrer"></iframe><p class="muted">If the embedded demo does not load, <a href="/pos-demo/index.html" target="_blank" rel="noopener">open Nexus POS directly</a>.</p></div>';}
 function render(){
  $('nav').innerHTML=Object.keys(TABS).map(t=>'<button class="nav'+(mainTab===t?" active":"")+'" data-main="'+t+'" aria-current="'+(mainTab===t?"page":"false")+'">'+t+'</button>').join("");
  $('heading').textContent=mainTab;$('intro').textContent=DESCRIPTIONS[mainTab];
@@ -357,7 +358,7 @@ function render(){
  if(mainTab==="Dashboard")html=showDashboard();
  if(mainTab==="Customers")html=showCustomers();
  if(mainTab==="Operations")html=subTab==="Jobs"?showJobs():subTab==="Schedule"?showSchedule():subTab==="Employees"?showEmployees():showHours();
- if(mainTab==="Finance")html=subTab==="Estimates"?showEstimates():subTab==="Invoices"?showInvoices():subTab==="Payments"?showPayments():showReports();
+ if(mainTab==="Finance")html=subTab==="Estimates"?showEstimates():subTab==="Invoices"?showInvoices():subTab==="Payments"?showPayments():subTab==="POS"?showPOS():showReports();
  if(mainTab==="Management")html=showManagement();
  $('stage').innerHTML=html;
 }
