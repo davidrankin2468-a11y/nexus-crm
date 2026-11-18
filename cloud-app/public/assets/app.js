@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posView:"Checkout",posError:"",posBusy:false,editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -176,11 +176,31 @@ function localDate(){
  const d=new Date();const f=new Date(d.getTime()-d.getTimezoneOffset()*60000);
  return f.toISOString().slice(0,10);
 }
-const financeViews=["Estimates","Invoices","Payments","Reports"];
+
+async function loadPos(){
+ try{const [p,sales]=await Promise.all([request("/api/pos/products"),request("/api/pos/sales")]);s.posProducts=p.items;s.posSales=sales.items;s.posError="";}
+ catch(e){s.posError=e.message||"POS unavailable";}
+ draw();
+}
+function posContent(){
+ const nav=sectionNav(["Checkout","Inventory","Customers","Reports"],s.posView,"posView","POS sections");
+ const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales are recorded only: no credit card is charged, and no tax calculation is performed.</p>');
+ if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
+ if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
+ if(s.posView==="Reports")return nav+warn+panel("Recorded sales",'<h3>Total: '+money(s.posSales.reduce((a,x)=>a+(x.status==="completed"?Number(x.total_cents):0),0)/100)+'</h3>'+table(["Receipt","Status","Amount"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td></tr>')));
+ if(s.posView==="Inventory")return nav+warn+editorPanel("Add product",'<form data-form="pos-product" class="gridform"><label>SKU<input required name="sku" pattern="[-A-Za-z0-9_]+" maxlength="60"></label><label>Product name<input required name="name" maxlength="200"></label><label>Price ($)<input required name="price" type="number" min="0" step=".01" max="1000000"></label><label>Starting stock<input required name="stock_quantity" type="number" min="0" step="1" max="1000000"></label><button class="primary" type="submit">Save product</button></form>')+panel("Inventory",table(["SKU","Name","Price","Stock"],s.posProducts.map(p=>'<tr><td>'+safe(p.sku)+'</td><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td></tr>')));
+ const rows=Object.entries(s.posCart).map(([id,q])=>({p:s.posProducts.find(x=>x.id===id),q})).filter(x=>x.p&&x.q>0);
+ const total=rows.reduce((a,x)=>a+x.p.price_cents*x.q,0);
+ return nav+warn+panel("Products",table(["Item","Price","Stock","Add"],s.posProducts.filter(x=>x.active).map(p=>'<tr><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td><td><button data-pos-add="'+safe(p.id)+'" '+(p.stock_quantity<=(s.posCart[p.id]||0)?"disabled":"")+'>Add</button></td></tr>')))+
+ panel("Checkout cart",table(["Item","Qty","Subtotal","Remove"],rows.map(x=>'<tr><td>'+safe(x.p.name)+'</td><td>'+safe(x.q)+'</td><td>'+money(x.p.price_cents*x.q/100)+'</td><td><button data-pos-remove="'+safe(x.p.id)+'">−1</button></td></tr>'))+
+ '<h3>Total before tax: '+money(total/100)+'</h3><div class="actionrow"><button data-action="pos-record" class="primary" '+(!total||s.posBusy?"disabled":"")+'>Record sale (no payment)</button><button data-action="pos-clear">Clear cart</button></div>');
+}
+const financeViews=["Estimates","Invoices","Payments","Reports","POS"];
 const estimateStatusOptions=selected=>["Draft","Sent","Accepted","Declined"].map(v=>'<option value="'+v+'" '+(v===selected?"selected":"")+'>'+v+'</option>').join("");
 const financeNavigation=()=>sectionNav(financeViews,s.financeView,"finance","Finance sections");
 function financeContent(){
  const nav=financeNavigation(),view=s.financeView;
+ if(view==="POS")return nav+posContent();
  if(s.financeError)return nav+panel("Finance needs attention",'<p>Unable to load cloud financial records: '+safe(s.financeError)+'</p><p>Your customers and jobs are still available. Select Refresh data to try Finance again.</p>');
  if(view==="Estimates"){
   const e=s.estimates.find(x=>x.id===s.editingEstimate);
@@ -730,7 +750,7 @@ document.addEventListener("click",async e=>{
  }
  if(b.dataset.action==="hide-recovery"){s.newRecoveryCodes=null;draw();notice("Recovery codes hidden.");return}
  if(b.dataset.page){s.newRecoveryCodes=null;s.newMfaSecret=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
- if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
+ if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");if(s.financeView==="POS")await loadPos();return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
  if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
  if(b.dataset.action==="copy-company-invite"){
@@ -773,8 +793,22 @@ document.addEventListener("click",async e=>{
  if(b.dataset.export){saveCSV(b.dataset.export);return}
  if(b.dataset.appointment){s.page="Operations";s.operationsView="Schedule";s.editingAppointment=b.dataset.appointment;draw();return}
  if(b.dataset.action==="cancel-edit"){s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();return}
+ if(b.dataset.posView){s.posView=b.dataset.posView;draw();return}
+ if(b.dataset.posAdd){const p=s.posProducts.find(x=>x.id===b.dataset.posAdd);if(p&&p.active&&(s.posCart[p.id]||0)<p.stock_quantity){s.posCart[p.id]=(s.posCart[p.id]||0)+1;draw()}return}
+ if(b.dataset.posRemove){const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
+ if(b.dataset.action==="pos-clear"){s.posCart={};draw();return}
+ if(b.dataset.action==="pos-refresh"){await loadPos();return}
+ if(b.dataset.action==="pos-record"){
+  if(s.posBusy)return;
+  const items=Object.entries(s.posCart).filter(([,quantity])=>quantity>0).map(([product_id,quantity])=>({product_id,quantity}));
+  if(!items.length)return;
+  s.posBusy=true;draw();
+  try{const receipt=await request("/api/pos/sales","POST",{items,tax_cents:0,idempotency_key:crypto.randomUUID().replace(/-/g,"")});s.posCart={};await loadPos();notice("Recorded POS sale "+receipt.id+". No payment charged.");}
+  catch(err){notice(err.message)}finally{s.posBusy=false;draw()}
+  return;
+ }
  if(b.dataset.action==="retry"){await start();return}
- if(b.dataset.action==="refresh"){try{await refresh();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
+ if(b.dataset.action==="refresh"){try{await refresh();if(s.page==="Finance"&&s.financeView==="POS")await loadPos();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
  if(b.dataset.action==="logout"){try{await request("/api/logout","POST",{});s.account=null;s.csrf="";authScreen("login");notice("Signed out.")}catch(err){notice(err.message)}}
 });
 document.addEventListener("submit",async e=>{
@@ -782,6 +816,12 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="pos-product"){
+   const price=Number(data.price),stock=Number(data.stock_quantity);
+   if(!Number.isFinite(price)||price<0||!Number.isSafeInteger(Math.round(price*100))||!Number.isSafeInteger(stock)||stock<0)throw Error("Invalid product");
+   await request("/api/pos/products","POST",{sku:data.sku,name:data.name,price_cents:Math.round(price*100),stock_quantity:stock});
+   await loadPos();notice("Company product saved.");return;
+  }
   if(type==="recover"){
    if(data.newPassword!==data.confirmPassword)throw Error("New passwords do not match.");
    if(String(data.newPassword).length<14)throw Error("Use at least 14 characters for your new password.");
