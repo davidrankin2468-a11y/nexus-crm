@@ -20,6 +20,14 @@ test("empty, non-HTTPS and malformed payloads fail closed",()=>{
  assert.equal(verifySquareSandboxSignature(body,signature,{key,notificationUrl:"http://example.com"}),false);
  assert.equal(verifySquareSandboxSignature(body,"garbage",{key,notificationUrl:url}),false);
 });
+test("Square signature verification supports original Buffer and Uint8Array bytes",()=>{
+ const bytes=Buffer.from(body,"utf8");
+ assert.equal(verifySquareSandboxSignature(bytes,signature,{key,notificationUrl:url}),true);
+ assert.equal(verifySquareSandboxSignature(new Uint8Array(bytes),signature,{key,notificationUrl:url}),true);
+ assert.equal(verifySquareSandboxSignature(Buffer.concat([bytes,Buffer.from(" ")]),signature,{key,notificationUrl:url}),false);
+ assert.equal(verifySquareSandboxSignature(bytes,signature.replace(/=$/,"!"),{key,notificationUrl:url}),false);
+ assert.equal(verifySquareSandboxSignature({body},signature,{key,notificationUrl:url}),false);
+});
 test("payment preparation rejects raw card data and invalid amounts",()=>{
  const good={source_id:"fake_token_123456",idempotency_key:"sandbox-attempt-01",amount_cents:100,currency:"USD"};
  assert.equal(validateSandboxPaymentDraft(good),true);
