@@ -177,6 +177,52 @@ function localDate(){
  return f.toISOString().slice(0,10);
 }
 
+
+/* Keep a pending sale's idempotency key until the server confirms the result.
+   The account/company scope prevents a different company from retrying it. */
+function posPendingStorageKey(){
+ return "nexus-pos-pending:"+String(s.account?.email||"").toLowerCase()+":"+String(s.account?.company||"").toLowerCase();
+}
+function posPendingRead(){
+ if(!s.account)return null;
+ try{
+  const value=JSON.parse(sessionStorage.getItem(posPendingStorageKey())||"null");
+  if(!value||typeof value.idempotency_key!=="string"||!/^[-A-Za-z0-9_]{8,100}$/.test(value.idempotency_key)||!Array.isArray(value.items)||value.items.length<1||value.items.length>50)return null;
+  if(value.items.some(x=>!x||typeof x.product_id!=="string"||!Number.isSafeInteger(x.quantity)||x.quantity<1))return null;
+  return value;
+ }catch{return null}
+}
+function posPendingStart(items){
+ const existing=posPendingRead();
+ if(existing)return existing;
+ const attempt={idempotency_key:crypto.randomUUID().replace(/-/g,""),items,tax_cents:0};
+ try{sessionStorage.setItem(posPendingStorageKey(),JSON.stringify(attempt))}
+ catch{throw Error("Safe checkout storage is unavailable. No sale was sent. Enable session storage and retry.")}
+ return attempt;
+}
+function posPendingFinish(){
+ try{sessionStorage.removeItem(posPendingStorageKey())}
+ catch{/* The server has already confirmed; no new attempt occurs here. */}
+}
+async function posCommit(){
+ if(s.posBusy)return;
+ let attempt=posPendingRead();
+ if(!attempt){
+  const items=Object.entries(s.posCart).filter(([,quantity])=>quantity>0).map(([product_id,quantity])=>({product_id,quantity}));
+  if(!items.length)return;
+  try{attempt=posPendingStart(items)}catch(e){notice(e.message);return}
+ }
+ s.posBusy=true;draw();
+ try{
+  const receipt=await request("/api/pos/sales","POST",attempt);
+  if(!receipt?.id)throw Error("Sale response did not contain a receipt reference");
+  posPendingFinish();s.posCart={};await loadPos();
+  notice("Sale "+receipt.id+" recorded as pending/unpaid. No card was charged.");
+ }catch(err){
+  notice("Sale outcome not yet confirmed: "+err.message+". Retry the same pending sale to avoid a duplicate.");
+ }finally{s.posBusy=false;draw()}
+}
+
 async function loadPos(){
  try{const [p,sales]=await Promise.all([request("/api/pos/products"),request("/api/pos/sales")]);s.posProducts=p.items;s.posSales=sales.items;s.posError="";}
  catch(e){s.posError=e.message||"POS unavailable";}
@@ -184,7 +230,9 @@ async function loadPos(){
 }
 function posContent(){
  const nav=sectionNav(["Checkout","Inventory","Customers","Reports"],s.posView,"posview","POS sections");
- const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales are recorded only: no credit card is charged, and no tax calculation is performed.</p>');
+ const pending=posPendingRead();
+ const pendingAlert=pending?panel("Checkout awaiting confirmation",'<p>A previous attempt may already be recorded. Retry with the same checkout reference; do not create a second sale.</p><button data-action="pos-retry" type="button" '+(s.posBusy?"disabled":"")+'>Retry pending sale safely</button>'):"";
+ const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert;
  if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
  if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
  if(s.posView==="Reports")return nav+warn+panel("Recorded sales",'<h3>Total: '+money(s.posSales.reduce((a,x)=>a+(x.status==="completed"?Number(x.total_cents):0),0)/100)+'</h3>'+table(["Receipt","Status","Amount"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td></tr>')));
@@ -193,7 +241,7 @@ function posContent(){
  const total=rows.reduce((a,x)=>a+x.p.price_cents*x.q,0);
  return nav+warn+panel("Products",table(["Item","Price","Stock","Add"],s.posProducts.filter(x=>x.active).map(p=>'<tr><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td><td><button data-pos-add="'+safe(p.id)+'" '+(p.stock_quantity<=(s.posCart[p.id]||0)?"disabled":"")+'>Add</button></td></tr>')))+
  panel("Checkout cart",table(["Item","Qty","Subtotal","Remove"],rows.map(x=>'<tr><td>'+safe(x.p.name)+'</td><td>'+safe(x.q)+'</td><td>'+money(x.p.price_cents*x.q/100)+'</td><td><button data-pos-remove="'+safe(x.p.id)+'">−1</button></td></tr>'))+
- '<h3>Total before tax: '+money(total/100)+'</h3><div class="actionrow"><button data-action="pos-record" class="primary" '+(!total||s.posBusy?"disabled":"")+'>Record sale (no payment)</button><button data-action="pos-clear">Clear cart</button></div>');
+ '<h3>Total before tax: '+money(total/100)+'</h3><div class="actionrow"><button data-action="pos-record" class="primary" '+(!total||s.posBusy||pending?"disabled":"")+'>Record sale (unpaid)</button><button data-action="pos-clear" '+(pending||s.posBusy?"disabled":"")+'>Clear cart</button></div>');
 }
 const financeViews=["Estimates","Invoices","Payments","Reports","POS"];
 const estimateStatusOptions=selected=>["Draft","Sent","Accepted","Declined"].map(v=>'<option value="'+v+'" '+(v===selected?"selected":"")+'>'+v+'</option>').join("");
@@ -794,19 +842,12 @@ document.addEventListener("click",async e=>{
  if(b.dataset.appointment){s.page="Operations";s.operationsView="Schedule";s.editingAppointment=b.dataset.appointment;draw();return}
  if(b.dataset.action==="cancel-edit"){s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();return}
  if(b.dataset.posview){s.posView=b.dataset.posview;draw();return}
- if(b.dataset.posAdd){const p=s.posProducts.find(x=>x.id===b.dataset.posAdd);if(p&&p.active&&(s.posCart[p.id]||0)<p.stock_quantity){s.posCart[p.id]=(s.posCart[p.id]||0)+1;draw()}return}
- if(b.dataset.posRemove){const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
- if(b.dataset.action==="pos-clear"){s.posCart={};draw();return}
+ if(b.dataset.posAdd){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const p=s.posProducts.find(x=>x.id===b.dataset.posAdd);if(p&&p.active&&!s.posBusy&&(s.posCart[p.id]||0)<p.stock_quantity){s.posCart[p.id]=(s.posCart[p.id]||0)+1;draw()}return}
+ if(b.dataset.posRemove){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
+ if(b.dataset.action==="pos-clear"){if(posPendingRead()){notice("A checkout needs confirmation before clearing the cart.");return}s.posCart={};draw();return}
  if(b.dataset.action==="pos-refresh"){await loadPos();return}
- if(b.dataset.action==="pos-record"){
-  if(s.posBusy)return;
-  const items=Object.entries(s.posCart).filter(([,quantity])=>quantity>0).map(([product_id,quantity])=>({product_id,quantity}));
-  if(!items.length)return;
-  s.posBusy=true;draw();
-  try{const receipt=await request("/api/pos/sales","POST",{items,tax_cents:0,idempotency_key:crypto.randomUUID().replace(/-/g,"")});s.posCart={};await loadPos();notice("Recorded POS sale "+receipt.id+". No payment charged.");}
-  catch(err){notice(err.message)}finally{s.posBusy=false;draw()}
-  return;
- }
+ if(b.dataset.action==="pos-retry"){await posCommit();return}
+ if(b.dataset.action==="pos-record"){await posCommit();return}
  if(b.dataset.action==="retry"){await start();return}
  if(b.dataset.action==="refresh"){try{await refresh();if(s.page==="Finance"&&s.financeView==="POS")await loadPos();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
  if(b.dataset.action==="logout"){try{await request("/api/logout","POST",{});s.account=null;s.csrf="";authScreen("login");notice("Signed out.")}catch(err){notice(err.message)}}
