@@ -36,7 +36,11 @@ function sqliteD1(){
    sql.exec("BEGIN");
    try{
     const out=[];
-    for(const stmt of stmts)out.push(sql.prepare(stmt.sql).run(...stmt.args));
+    for(const stmt of stmts){
+     const prepared=sql.prepare(stmt.sql);
+     if(prepared.columns().length)out.push({results:prepared.all(...stmt.args),meta:{changes:0}});
+     else {const result=prepared.run(...stmt.args);out.push({results:[],meta:{changes:Number(result.changes)}})}
+    }
     sql.exec("COMMIT");return out;
    }catch(e){sql.exec("ROLLBACK");throw e}
   }
