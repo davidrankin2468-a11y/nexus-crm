@@ -6,12 +6,18 @@ on:
       - 'api/pos/**'
       - 'lib/nexus-pos-server.js'
       - 'tests/test_vercel_pos.mjs'
+      - 'tests/test_vercel_pos_auth.mjs'
+      - 'pos-secure/**'
+      - 'vercel.json'
       - '.github/workflows/vercel-pos-checks.yml'
   pull_request:
     paths:
       - 'api/pos/**'
       - 'lib/nexus-pos-server.js'
       - 'tests/test_vercel_pos.mjs'
+      - 'tests/test_vercel_pos_auth.mjs'
+      - 'pos-secure/**'
+      - 'vercel.json'
       - '.github/workflows/vercel-pos-checks.yml'
 permissions:
   contents: read
@@ -29,7 +35,9 @@ jobs:
         run: |
           node --check lib/nexus-pos-server.js
           node --check api/pos/products.js
+          node --check api/pos/login.js
+          node --check api/pos/companies.js
           node --check api/pos/sales.js
           node --check api/pos/status.js
       - name: Run POS security and API tests
-        run: node --test tests/test_vercel_pos.mjs
+        run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs
