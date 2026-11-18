@@ -33,7 +33,7 @@ test("CRM D1 health is healthy on actual deployed preview",async()=>{
  assert.equal(json().ok,true);
 });
 test("anonymous requests cannot read CRM or POS companies or licensing",async()=>{
- for(const path of ["/api/me","/api/pos/products","/api/pos/sales","/api/pos/licensing"]){
+ for(const path of ["/api/me","/api/pos/products","/api/pos/sales","/api/pos/licensing","/api/pos/export"]){
   const {response}=await get(path);
   assert.equal(response.status,401,"Expected private "+path+" to reject anonymous requests");
  }
@@ -57,4 +57,6 @@ test("static frontend is the original five-tab CRM with POS inside Finance",asyn
  assert.match(js.text,/licenseManagementContent/);
  assert.match(js.text,/data-pos-void/);
  assert.match(js.text,/data-pos-customer/);
+ assert.match(js.text,/data-form="pos-download"/);
+ assert.match(js.text,/nexus-pos-company-export-v1/);
 });
