@@ -15,6 +15,16 @@
 - **A real Square Sandbox API connection is NOT confirmed**: the current route must run on a deployed authenticated Preview instance after final readiness approval, and the current latest PR version has not been verified at that host. A mock response is not a substitute for a real provider response.
 - No automatic deployment was initiated by this work, although existing GitHub integration may create Preview deployments on pushes.
 
+## Subsequent cleanup and database tests — November 18, 2026
+
+- With explicit owner approval, the accidental Vercel **Production**-scoped `SQUARE_SANDBOX_LOCATION_ID` value was overwritten with the literal `DISABLED`. The **Production variable record still exists**: Vercel's connected tools allow edits but currently provide no delete-environment-variable action. The owner must delete **only** that Production entry from Vercel Settings > Environment Variables, preserving the separate correct Preview entry. There is no active Square Production API integration.
+- Applied development-only migration `supabase/sql/nexus_square_sandbox_payment_state.sql` to Supabase project `xmjelakwxnewqalqzktm`. It adds tenant-bound payment attempts and webhook event IDs, unique payment idempotency keys, unique provider event IDs, and composite company/transaction foreign keys. Both tables have RLS enabled and are unreadable to ordinary users or anonymous clients.
+- Ran **seven rollback-only database acceptance checks** against fictional QA data: same-company payment attempt, same-company webhook event, duplicate idempotency rejection, duplicate webhook event rejection, cross-company sale foreign-key rejection, cross-company webhook foreign-key rejection, and non-USD currency rejection. **All seven passed.**
+- Verified after transaction rollback that the development database contains **zero** test sales, sandbox payment attempts and webhook events.
+- Both GitHub workflows passed on the migration commit `a4e98803d683e36a94b73d7cca50c4ef4a463d82`.
+- Supabase advisory scan: informational `rls_enabled_no_policy` warnings for deliberately private server-only tables; also a warning that leaked-password protection is not enabled in Supabase Auth (review before production).
+- Actual read-only Square Sandbox API connectivity and payment/refund APIs **remain unverified** without a running authenticated Preview instance. Never claim a mocked test proves a provider connection.
+
 ## Evidence and results
 
 | Check | Result | Evidence and scope |
