@@ -37,23 +37,23 @@ export async function onRequest({request,env}){
   }
   if(path==="/api/pos/sales"&&method==="POST"){
    const v=await bodyOf(request);
-   if(typeof v.idempotency_key!=="string"||! /^[a-zA-Z0-9_-]{8,100}$/.test(v.idempotency_key)||!Array.isArray(v.items)||v.items.length<1||v.items.length>50||!Number.isSafeInteger(v.tax_cents)||v.tax_cents<0||v.tax_cents>100000000)return json({error:"Invalid sale"},400);
+   if(typeof v.idempotency_key!=="string"||! /^[a-zA-Z0-9_-]{8,100}$/.test(v.idempotency_key)||!Array.isArray(v.items)||v.items.length<1||v.items.length>50||!Number.isSafeInteger(v.tax_cents)||v.tax_cents!==0)return json({error:"Invalid sale"},400);
    const old=await db.prepare("SELECT id,total_cents FROM pos_sales WHERE tenant_id=? AND idempotency_key=?").bind(tenant,v.idempotency_key).first();
-   if(old)return json({id:old.id,total_cents:old.total_cents,duplicate:true});
+   if(old)return json({id:old.id,total_cents:old.total_cents,status:"pending",payment_charged:false,recorded_only:true,duplicate:true});
    const qty=new Map();
    for(const item of v.items){if(typeof item.product_id!=="string"||!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>1000)return json({error:"Invalid line"},400);qty.set(item.product_id,(qty.get(item.product_id)||0)+item.quantity)}
    if(qty.size>50)return json({error:"Too many products"},400);
    const lines=[];let subtotal=0;
    for(const [id,quantity] of qty){const p=await db.prepare("SELECT id,name,price_cents,stock_quantity FROM pos_products WHERE tenant_id=? AND id=? AND active=1").bind(tenant,id).first();if(!p||p.stock_quantity<quantity)return json({error:"Product unavailable or insufficient stock"},409);const amount=p.price_cents*quantity;if(!Number.isSafeInteger(amount))return json({error:"Amount overflow"},400);subtotal+=amount;lines.push({p,quantity,amount})}
    if(!Number.isSafeInteger(subtotal)||subtotal+v.tax_cents>1000000000)return json({error:"Sale amount too large"},400);
-   const saleId=crypto.randomUUID(),t=now(),stmts=[db.prepare("INSERT INTO pos_sales(id,tenant_id,status,subtotal_cents,tax_cents,total_cents,idempotency_key,created_at,completed_at) VALUES(?,?,'completed',?,?,?,?,?,?)").bind(saleId,tenant,subtotal,v.tax_cents,subtotal+v.tax_cents,v.idempotency_key,t,t)];
+   const saleId=crypto.randomUUID(),t=now(),stmts=[db.prepare("INSERT INTO pos_sales(id,tenant_id,status,subtotal_cents,tax_cents,total_cents,idempotency_key,created_at,completed_at) VALUES(?,?,'pending',?,?,?,?,?,NULL)").bind(saleId,tenant,subtotal,0,subtotal,v.idempotency_key,t)];
    for(const {p,quantity,amount} of lines){
     stmts.push(db.prepare("UPDATE pos_products SET stock_quantity=stock_quantity-?,updated_at=? WHERE tenant_id=? AND id=?").bind(quantity,t,tenant,p.id));
     stmts.push(db.prepare("INSERT INTO pos_sale_items(id,tenant_id,sale_id,product_id,product_name,quantity,unit_price_cents,line_total_cents) VALUES(?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),tenant,saleId,p.id,p.name,quantity,p.price_cents,amount));
     stmts.push(db.prepare("INSERT INTO pos_inventory_movements(id,tenant_id,product_id,sale_id,quantity_delta,reason,created_at) VALUES(?,?,?,?,?,'sale',?)").bind(crypto.randomUUID(),tenant,p.id,saleId,-quantity,t));
    }
    await db.batch(stmts);
-   return json({id:saleId,total_cents:subtotal+v.tax_cents,recorded_only:true},201);
+   return json({id:saleId,total_cents:subtotal,status:"pending",payment_charged:false,recorded_only:true},201);
   }
   return json({error:"Not found"},404);
  }catch(e){if(/UNIQUE constraint failed/.test(String(e)))return json({error:"Duplicate SKU or request"},409);if(/CHECK constraint failed/.test(String(e)))return json({error:"Stock or amount constraint failed"},409);return json({error:"POS request failed"},500)}
