@@ -13,8 +13,10 @@ function sqliteD1(){
  sql.exec("PRAGMA foreign_keys = ON;");
  sql.exec(`CREATE TABLE tenants(id TEXT PRIMARY KEY,name TEXT NOT NULL,created_at INTEGER NOT NULL);
  CREATE TABLE users(id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), role TEXT NOT NULL, disabled_at INTEGER);
- CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf_token TEXT NOT NULL,expires_at INTEGER NOT NULL);`);
+ CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf_token TEXT NOT NULL,expires_at INTEGER NOT NULL);
+ CREATE TABLE customers(id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL REFERENCES tenants(id),name TEXT NOT NULL, UNIQUE(tenant_id,id));`);
  sql.exec(readFileSync("cloud-app/migrations/007_pos_multi_company.sql","utf8"));
+ sql.exec(readFileSync("cloud-app/migrations/011_pos_customer_tenant_integrity.sql","utf8"));
  const db={
   prepare(query){
    const state={args:[]};
@@ -68,6 +70,10 @@ const product=(sku,price,stock,tenant_id)=>({sku,name:"Test "+sku,price_cents:pr
 const cart=(id,key,qty=1)=>({idempotency_key:key,tax_cents:0,items:[{product_id:id,quantity:qty}]});
 test("integrated authenticated company-isolated checkout with real D1 POS schema",async t=>{
  seed();
+ const customerA="11111111-1111-4111-8111-111111111111";
+ const customerB="22222222-2222-4222-8222-222222222222";
+ f.sql.prepare("INSERT INTO customers(id,tenant_id,name) VALUES (?,'tenant-a','Customer A')").run(customerA);
+ f.sql.prepare("INSERT INTO customers(id,tenant_id,name) VALUES (?,'tenant-b','Customer B')").run(customerB);
  await t.test("company A creates a product without accepting forged tenant ID",async()=>{
   const r=await requestPOS("/api/pos/products",{method:"POST",body:product("SKU-A",550,2,"tenant-b")});
   assert.equal(r.status,201);
@@ -96,13 +102,25 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
   assert.equal(f.sql.prepare("SELECT count(*) n FROM pos_sales").get().n,0);
  });
  let saleId;
+ await t.test("POS rejects attempts to attach another company's CRM customer",async()=>{
+  const before=f.sql.prepare("SELECT count(*) n FROM pos_sales").get().n;
+  const r=await requestPOS("/api/pos/sales",{method:"POST",body:{...cart(productA,"wrong-customer-tenant-01"),customer_id:customerB}});
+  assert.equal(r.status,404);
+  assert.equal(f.sql.prepare("SELECT count(*) n FROM pos_sales").get().n,before);
+ });
  await t.test("a company A checkout records an unpaid receipt and deducts its own stock",async()=>{
-  const r=await requestPOS("/api/pos/sales",{method:"POST",body:cart(productA,"real-sql-test-key")});
+  const r=await requestPOS("/api/pos/sales",{method:"POST",body:{...cart(productA,"real-sql-test-key"),customer_id:customerA}});
   assert.equal(r.status,201);
   assert.equal(r.data.status,"pending");
   assert.equal(r.data.payment_charged,false);
   saleId=r.data.id;
-  const sale=f.sql.prepare("SELECT status,completed_at,total_cents FROM pos_sales WHERE id=?").get(saleId);
+  const sale=f.sql.prepare("SELECT status,completed_at,total_cents,customer_id FROM pos_sales WHERE id=?").get(saleId);
+  assert.equal(sale.customer_id,customerA);
+  const salesForA=await requestPOS("/api/pos/sales");
+  assert.equal(salesForA.status,200);
+  assert.equal(salesForA.data.items[0].customer_name,"Customer A");
+  const salesForB=await requestPOS("/api/pos/sales",{token:tokB});
+  assert.equal(salesForB.data.items.length,0);
   assert.equal(sale.status,"pending");
   assert.equal(sale.completed_at,null);
   assert.equal(sale.total_cents,550);
@@ -141,6 +159,10 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
   assert.equal(f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity,0);
   assert.equal(f.sql.prepare("SELECT count(*) n FROM pos_sales WHERE tenant_id='tenant-a'").get().n,2);
   assert.equal(f.sql.prepare("SELECT count(*) n FROM pos_sales WHERE tenant_id='tenant-b'").get().n,0);
+ });
+ await t.test("D1 trigger rejects cross-company CRM customer even if API validation were bypassed",()=>{
+  assert.throws(()=>f.sql.prepare("UPDATE pos_sales SET customer_id=? WHERE id=?").run(customerB,saleId),/POS CRM customer must belong/);
+  assert.equal(f.sql.prepare("SELECT customer_id FROM pos_sales WHERE id=?").get(saleId).customer_id,customerA);
  });
  f.sql.close();
 });
