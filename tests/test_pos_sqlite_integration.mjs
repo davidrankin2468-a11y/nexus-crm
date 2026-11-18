@@ -18,6 +18,7 @@ function sqliteD1(){
  sql.exec(readFileSync("cloud-app/migrations/007_pos_multi_company.sql","utf8"));
  sql.exec(readFileSync("cloud-app/migrations/011_pos_customer_tenant_integrity.sql","utf8"));
  sql.exec(readFileSync("cloud-app/migrations/012_license_catalog_staging.sql","utf8"));
+ sql.exec(readFileSync("cloud-app/migrations/013_pos_void_pending_stock.sql","utf8"));
  const db={
   prepare(query){
    const state={args:[]};
@@ -183,6 +184,29 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
  await t.test("D1 trigger rejects cross-company CRM customer even if API validation were bypassed",()=>{
   assert.throws(()=>f.sql.prepare("UPDATE pos_sales SET customer_id=? WHERE id=?").run(customerB,saleId),/POS CRM customer must belong/);
   assert.equal(f.sql.prepare("SELECT customer_id FROM pos_sales WHERE id=?").get(saleId).customer_id,customerA);
+ });
+ await t.test("voiding a pending sale restores reserved inventory once; does not refund or charge",async()=>{
+  const before=f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity;
+  const r=await requestPOS("/api/pos/sales/void",{method:"POST",body:{sale_id:saleId,confirm:"VOID UNPAID SALE"}});
+  assert.equal(r.status,200);
+  assert.equal(r.data.status,"voided");
+  assert.equal(r.data.inventory_restored,true);
+  assert.equal(r.data.payment_charged,false);
+  assert.equal(r.data.refund_processed,false);
+  assert.equal(f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity,before+1);
+  assert.equal(f.sql.prepare("SELECT status FROM pos_sales WHERE id=?").get(saleId).status,"voided");
+  const second=await requestPOS("/api/pos/sales/void",{method:"POST",body:{sale_id:saleId,confirm:"VOID UNPAID SALE"}});
+  assert.equal(second.status,200);
+  assert.equal(second.data.duplicate,true);
+  assert.equal(f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity,before+1);
+  const move=f.sql.prepare("SELECT count(*) AS n FROM pos_inventory_movements WHERE sale_id=? AND reason='correction'").get(saleId);
+  assert.equal(move.n,1);
+  const forbidden=await requestPOS("/api/pos/sales/void",{method:"POST",token:tokB,body:{sale_id:saleId,confirm:"VOID UNPAID SALE"}});
+  assert.equal(forbidden.status,404);
+  const employee=await requestPOS("/api/pos/sales/void",{method:"POST",token:tokEmployee,body:{sale_id:saleId,confirm:"VOID UNPAID SALE"}});
+  assert.equal(employee.status,403);
+  const invalid=await requestPOS("/api/pos/sales/void",{method:"POST",body:{sale_id:saleId,confirm:"DELETE"}});
+  assert.equal(invalid.status,400);
  });
  f.sql.close();
 });
