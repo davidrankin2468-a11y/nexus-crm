@@ -53,6 +53,20 @@ After the final **preview** deployment (not production):
 8. Test insufficient stock, invalid amounts, duplicate SKU, cross-origin POST, employee denial, token expiration, mobile form fields, and printable receipt.
 9. Verify no payment charge and no customer production data changed.
 
+## New development preparation (November 18, 2026)
+
+- Added two **fictional** companies directly to the development Supabase `nexus_companies` table. These companies do not have user memberships, so live login cannot be verified yet. Never insert fake identities directly into `auth.users`.
+- Applied `supabase/sql/nexus_license_development_foundation.sql` to the development project only. This adds a private license plan catalog, company-scoped license records, and unique/idempotent license-event audit records. New plans default `enabled = false`, new licenses default `pending`, and anonymous/authenticated clients cannot directly query any of these tables.
+- Added **isolated Square sandbox preparation** in `lib/nexus-square-sandbox.js` with exact raw-body webhook HMAC-SHA256 verification and a disabled-payments status endpoint `/api/square/sandbox-status`. There is no payment creation/refund endpoint and no live webhook receiver yet; both need real sandbox credentials, secure backend mapping, reconciliation, and live host testing.
+- GitHub tests include `tests/test_square_sandbox.mjs` and check that no production payment API URL is used.
+- Payment provider source: [Square sandbox payments](https://developer.squareup.com/docs/devtools/sandbox/payments), [webhook signature verification](https://developer.squareup.com/docs/webhooks/step3validate).
+
+### Additional owner-only tasks
+1. In the Supabase **development** project, create two approved fictional email/password Auth test users; give each a different company owner/admin membership. Real customer data and real user credentials must not be used.
+2. Enter the development project's private Supabase service-role/secret key directly into Vercel's encrypted **Preview** branch-scoped `SUPABASE_SERVICE_ROLE_KEY`. Do not paste secrets into ChatGPT, GitHub, or source.
+3. When ready to test Square, create/connect a Square **Sandbox** developer application and provide configuration *directly in protected environment settings*, using `SQUARE_ENVIRONMENT=sandbox` plus `SQUARE_SANDBOX_ACCESS_TOKEN`, `SQUARE_SANDBOX_LOCATION_ID`, `SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SANDBOX_WEBHOOK_URL`. Do not use live production tokens.
+4. Do not enable real payments or deploy the Vercel preview until pre-deploy security checks and all owner-only configuration are complete.
+
 ## After staging acceptance, before commercial launch
 - Square **sandbox** only; connect/test webhooks, payment intent status, settlement reconciliation, partial/full refunds, disputes, PCI-safe tokenization, and tax rules in target jurisdictions.
 - Subscription/license entitlements and automated company provisioning, separate from the owner's private Command Center.
