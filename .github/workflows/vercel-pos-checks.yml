@@ -1,0 +1,35 @@
+name: Vercel POS backend checks
+on:
+  push:
+    branches: [feature/nexus-pos-crm-foundation]
+    paths:
+      - 'api/pos/**'
+      - 'lib/nexus-pos-server.js'
+      - 'tests/test_vercel_pos.mjs'
+      - '.github/workflows/vercel-pos-checks.yml'
+  pull_request:
+    paths:
+      - 'api/pos/**'
+      - 'lib/nexus-pos-server.js'
+      - 'tests/test_vercel_pos.mjs'
+      - '.github/workflows/vercel-pos-checks.yml'
+permissions:
+  contents: read
+jobs:
+  test-pos-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Vercel server modules
+        run: |
+          node --check lib/nexus-pos-server.js
+          node --check api/pos/products.js
+          node --check api/pos/sales.js
+          node --check api/pos/status.js
+      - name: Run POS security and API tests
+        run: node --test tests/test_vercel_pos.mjs
