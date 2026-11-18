@@ -19,6 +19,7 @@ function sqliteD1(){
  sql.exec(readFileSync("cloud-app/migrations/011_pos_customer_tenant_integrity.sql","utf8"));
  sql.exec(readFileSync("cloud-app/migrations/012_license_catalog_staging.sql","utf8"));
  sql.exec(readFileSync("cloud-app/migrations/013_pos_void_pending_stock.sql","utf8"));
+ sql.exec(readFileSync("cloud-app/migrations/014_license_event_tenant_guard.sql","utf8"));
  const db={
   prepare(query){
    const state={args:[]};
@@ -94,6 +95,14 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
   });
   assert.equal(attemptedActivation.status,404);
   assert.equal(f.sql.prepare("SELECT COUNT(*) AS n FROM nexus_tenant_licenses").get().n,0);
+ });
+ await t.test("license event deduplication and cross-company denial",()=>{
+  const licId="license-a";
+  f.sql.prepare("INSERT INTO nexus_tenant_licenses(id,tenant_id,plan_code,status,updated_at) VALUES (?,'tenant-a','crm_starter_monthly_draft','pending',100)").run(licId);
+  assert.throws(()=>f.sql.prepare("INSERT INTO nexus_license_events(id,tenant_id,license_id,provider,provider_event_id,event_type,verified,recorded_at) VALUES ('bad','tenant-b',?,'square','fake-event-cross-tenant','subscription.updated',0,1)").run(licId),/License event belongs to another company/);
+  f.sql.prepare("INSERT INTO nexus_license_events(id,tenant_id,license_id,provider,provider_event_id,event_type,verified,recorded_at) VALUES ('good','tenant-a',?,'square','fake-event-001','subscription.updated',0,1)").run(licId);
+  assert.throws(()=>f.sql.prepare("INSERT INTO nexus_license_events(id,tenant_id,license_id,provider,provider_event_id,event_type,verified,recorded_at) VALUES ('repeat','tenant-a',?,'square','fake-event-001','subscription.updated',0,1)").run(licId),/UNIQUE constraint failed/);
+  assert.equal(f.sql.prepare("SELECT status FROM nexus_tenant_licenses WHERE id=?").get(licId).status,"pending");
  });
  await t.test("company A creates a product without accepting forged tenant ID",async()=>{
   const r=await requestPOS("/api/pos/products",{method:"POST",body:product("SKU-A",550,2,"tenant-b")});
