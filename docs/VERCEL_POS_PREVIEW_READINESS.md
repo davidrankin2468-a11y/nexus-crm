@@ -40,7 +40,7 @@ This file documents the **final deployment gate**. Do **not** merge pull request
 - [x] `SQUARE_ENVIRONMENT=sandbox` is configured in Preview and the old Production Square access-token record is absent.
 - [x] Added owner/admin-protected **read-only** `GET /api/square/sandbox-connectivity` endpoint and successful mocked tests (does not charge cards, edit records, or validate actual secret values).
 - [x] Applied developer-only `supabase/sql/nexus_square_sandbox_payment_state.sql` and verified **seven rollback-only** duplicate-event, tenant-FK, USD-currency, and happy-path database checks. No test rows remain.
-- [ ] **Cleanup needed in Vercel:** an unintended Production-targeted `SQUARE_SANDBOX_LOCATION_ID` record remains present. Its value was changed to the harmless literal `DISABLED` with explicit owner permission; the connected Vercel tool does not provide deletion. Manually delete **only this Production record** using Vercel Settings > Environment Variables. Do not delete the correctly scoped Preview record.
+- [x] **Square Production-variable cleanup verified:** the unintended Production-targeted `SQUARE_SANDBOX_LOCATION_ID` was deleted by the owner. Vercel metadata confirms all Square variables are now Preview-only for `feature/nexus-pos-crm-foundation`; their values were not retrieved.
 - [ ] **Provider connection still not tested:** call read-only endpoint from a current deployed authenticated Preview once owner allows final preview acceptance. Passing mocked tests and stored env vars is not an actual Square API connection.
 - [ ] Supabase security advisor flags **leaked-password protection** not enabled; review this before commercial production. Private server-only tables intentionally have RLS enabled with no client policies.
 
