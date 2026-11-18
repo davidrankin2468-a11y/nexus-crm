@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import products from '../api/pos/products.js';
 import sales from '../api/pos/sales.js';
+import receipts from '../api/pos/receipts.js';
 import status from '../api/pos/status.js';
 import {validProduct,validSale} from '../lib/nexus-pos-server.js';
 
@@ -20,7 +21,8 @@ globalThis.fetch=async (url,options)=>{
  else if(u.pathname==='/rest/v1/nexus_company_members')out=u.searchParams.get('company_id')==='eq.'+companyA?[{role:'owner'}]:[];
  else if(u.pathname==='/rest/v1/nexus_pos_products')out=[{id:productId,company_id:companyA,name:'Test item',price_cents:125,stock_quantity:2,active:true}];
  else if(u.pathname==='/rest/v1/rpc/nexus_create_pos_product')out=productId;
- else if(u.pathname==='/rest/v1/nexus_pos_sales')out=[];
+ else if(u.pathname==='/rest/v1/nexus_pos_sales')out=u.searchParams.has('id')?[{id:'55555555-5555-4555-8555-555555555555',status:'pending',subtotal_cents:125,tax_cents:0,total_cents:125,created_at:'2026-11-17T00:00:00Z'}]:[];
+ else if(u.pathname==='/rest/v1/nexus_pos_sale_items')out=[{id:'66666666-6666-4666-8666-666666666666',product_name:'Fictional item',quantity:1,unit_price_cents:125,line_total_cents:125}];
  else if(u.pathname==='/rest/v1/rpc/nexus_record_pos_sale')out='55555555-5555-4555-8555-555555555555';
  else{code=404;out={error:'not found'};}
  return {ok:code===200,status:code,json:async()=>out};
@@ -40,4 +42,21 @@ test('record sale uses atomic database RPC and verified actor/company',async()=>
 test('blocks mismatched Origin on POST',async()=>{const q=req('POST',companyA,{sku:'X',name:'X',price_cents:100,stock_quantity:1});q.headers.origin='https://attacker.invalid';const r=res();await products(q,r);assert.equal(r.code,403)});
 test('unsupported HTTP methods return 405',async()=>{const r=res();await sales(req('DELETE'),r);assert.equal(r.code,405)});
 test('unconfigured deployment fails closed',async()=>{const key=process.env.SUPABASE_SERVICE_ROLE_KEY;delete process.env.SUPABASE_SERVICE_ROLE_KEY;const r=res();await sales(req(),r);assert.equal(r.code,503);process.env.SUPABASE_SERVICE_ROLE_KEY=key});
+test('receipt read requires an approved company and returns unpaid itemized results',async()=>{
+ calls.length=0;
+ const q=req();q.query={sale_id:'55555555-5555-4555-8555-555555555555'};
+ const r=res();await receipts(q,r);
+ assert.equal(r.code,200);
+ assert.equal(r.body.sale.status,'pending');
+ assert.equal(r.body.payment_verified,false);
+ assert.equal(r.body.items.length,1);
+ for(const path of ['/rest/v1/nexus_pos_sales','/rest/v1/nexus_pos_sale_items']){
+  const find=calls.find(x=>x.url===path);
+  assert.equal(find.query.get('company_id'),'eq.'+companyA);
+ }
+ const denied=res();await receipts({...q,headers:{...q.headers,'x-nexus-company-id':companyB}},denied);
+ assert.equal(denied.code,403);
+ const invalid=res();await receipts({...q,query:{sale_id:'not-a-uuid'}},invalid);
+ assert.equal(invalid.code,400);
+});
 test.after(()=>{globalThis.fetch=oldFetch});
