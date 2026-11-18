@@ -37,6 +37,7 @@ jobs:
           node --check api/pos/products.js
           node --check api/pos/login.js
           node --check api/pos/companies.js
+          node --check api/pos/receipts.js
           node --check api/pos/sales.js
           node --check api/pos/status.js
       - name: Run POS security and API tests
