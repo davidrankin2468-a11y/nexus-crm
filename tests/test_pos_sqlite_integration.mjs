@@ -72,6 +72,10 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
   const r=await requestPOS("/api/pos/products",{method:"POST",body:product("SKU-A",550,2,"tenant-b")});
   assert.equal(r.status,201);
   assert.equal(f.sql.prepare("SELECT tenant_id FROM pos_products WHERE id=?").get(r.data.id).tenant_id,"tenant-a");
+  const movement=f.sql.prepare("SELECT tenant_id,reason,quantity_delta FROM pos_inventory_movements WHERE product_id=?").get(r.data.id);
+  assert.equal(movement.tenant_id,"tenant-a");
+  assert.equal(movement.reason,"restock");
+  assert.equal(movement.quantity_delta,2);
  });
  let productA,productB;
  await t.test("company B creates separate SKU, sees only company B inventory",async()=>{
