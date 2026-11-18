@@ -19,8 +19,8 @@ This file documents the **final deployment gate**. Do **not** merge pull request
 | [x] | Vercel non-secret environment settings | `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` set for **Preview** and this feature branch only. |
 | [x] | License/subscription *database foundation* | Development license-plan, company-license and audit tables exist, RLS is enabled, user reads are revoked; no active licenses/plans or subscription processing. |
 | [x] | Square *sandbox groundwork* | Sandbox-only status and webhook-signature/input validation helpers, covered by automated tests. No Square account connected or provider transaction run. |
-| [ ] | Approved development Auth accounts | **Blocked — owner/provider action.** Supabase development currently has **0 Auth users**. Create approved test accounts and verify email/password login without exposing passwords. |
-| [ ] | Company membership and isolation tests | **Blocked by Auth accounts.** Currently **0** development company memberships; assign two distinct test users to two companies; run cross-company tests and employee-denial checks. |
+| [x] | Approved development Auth accounts | **Verified.** Supabase development has **2 confirmed Auth accounts**. Live password sign-in is still untested. |
+| [x] | Two company owner memberships | **Verified.** The 2 confirmed test accounts each have an **owner** membership in a different fictional QA company. |\n| [ ] | Live tenant-isolation and employee access tests | Live sign-in, cross-company product/receipt denial and an employee role denial still require testing. |
 | [ ] | Supabase privileged server credential | **Blocked — owner/provider action.** `SUPABASE_SERVICE_ROLE_KEY` is **missing** from Vercel `nexus-crm-ikol` preview config. Add privately, encrypted, scoped to this branch only. |
 | [ ] | Square sandbox account and credentials | **Blocked — owner/provider action.** Create/connect a Square *Sandbox* application, assign sandbox credentials securely; do not use production keys. |
 | [ ] | Full Square payment integration | Not implemented. Add sandbox-only server payment requests, signature-verified webhook receiver, event deduplication, settlement reconciliation, failed-payment handling and safe refunds. No real charges. |
@@ -35,12 +35,12 @@ This file documents the **final deployment gate**. Do **not** merge pull request
 - GitHub PR: [Nexus POS + CRM #1](https://github.com/davidrankin2468-a11y/nexus-crm/pull/1). Draft, mergeable, production branch unchanged.
 - Vercel has older automatic preview deployments marked `READY`; this **does not mean the current development commit was deployed or that the POS backend is configured**.
 - Vercel project `nexus-crm-ikol` has the two public/development Supabase preview settings, but **no configured server secret**.
-- Supabase development counts when checked: **0 Auth users, 2 fictional QA companies, 0 memberships, 0 license plans, 0 licenses, 0 license events**.
+- Supabase development counts verified: **2 confirmed Auth users, 2 fictional QA companies, 2 owner memberships**; 0 license plans, 0 licenses, 0 license events. The second test account's email may contain a typo in the domain. Owner should check it in the Authentication panel rather than changing `auth.users` via SQL.
 - Cloudflare `nexus-crm-secure` latest development deployment was **queued**. Continue to use a previously *successful* preview for observational tests until a newer commit is confirmed deployed.
 - Alerts: existing **Nexus POS Blocker Alerts** watch checks for new or materially changed blockers; do not repeat unresolved unchanged problems.
 
 ### User action needed before authenticated live testing
-1. Create approved test-user identities directly in the development Supabase Auth console; do not send account passwords in chat.
+1. **Completed:** Two confirmed development Auth accounts exist and have separate company owner memberships. Review the second account's email spelling in Supabase Authentication and confirm credentials through a real sign-in after the preview is deployed. Do not share passwords in chat.
 2. Add the development-only private Supabase service key to the protected Vercel Preview environment on the feature branch.
 3. Connect Square's developer **Sandbox** through protected settings when ready to test simulated payments, not live card charges.
 
@@ -70,10 +70,10 @@ Do not paste the value into ChatGPT, a GitHub issue, source code, or a demo HTML
 
 `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` are already populated in Vercel for this preview branch. Confirm they still point to the development project before deploy. New `sb_secret_*` keys go in the `SUPABASE_SERVICE_ROLE_KEY` variable even though the variable has a legacy name; the server sends new keys in the `apikey` header, not as a JWT.
 
-### 2. Two development Auth accounts and company memberships (mandatory)
-In **Supabase development project > Authentication > Users**, create two approved fictional testing accounts. Use test emails and no real customer data. Verify email/password Auth works. Create two *development* `nexus_companies` and `nexus_company_members` records; assign each account to a different company as owner/admin. Do this from trusted Supabase admin tools, not from the web client. Never use fake user IDs that bypass `auth.users` foreign keys.
+### 2. Two development Auth accounts and company memberships — COMPLETED; browser tests pending
+Two confirmed Supabase development Auth accounts were assigned **owner** membership to **different fictional QA companies**. Assignments were read back from the database and independently verified; no passwords were accessed or committed to GitHub.
 
-Confirm a third employee membership cannot access POS. Test account passwords must not go into GitHub.
+**Still required:** test both passwords on a live secure preview, verify the accounts cannot view each other's products or receipts, and check that a third employee-role account has no privileged POS access. Review the second test user's email spelling in the Supabase Auth dashboard; do not directly edit Auth system tables.
 
 ### 3. Preview deployment limit/availability
 Previously seen Vercel blockers: `build-rate-limit` and API deployment limit HTTP 402. When cleared and blockers 1–2 are resolved, deploy **preview only** from this feature branch and verify the deployment SHA equals the PR head.
@@ -104,7 +104,7 @@ After the final **preview** deployment (not production):
 - Payment provider source: [Square sandbox payments](https://developer.squareup.com/docs/devtools/sandbox/payments), [webhook signature verification](https://developer.squareup.com/docs/webhooks/step3validate).
 
 ### Additional owner-only tasks
-1. In the Supabase **development** project, create two approved fictional email/password Auth test users; give each a different company owner/admin membership. Real customer data and real user credentials must not be used.
+1. **Completed:** Two approved development Auth users are connected to separate fictional companies as owners. The second test email address may contain a typo. Verify password sign-in before live testing and do not use real customer records.
 2. Enter the development project's private Supabase service-role/secret key directly into Vercel's encrypted **Preview** branch-scoped `SUPABASE_SERVICE_ROLE_KEY`. Do not paste secrets into ChatGPT, GitHub, or source.
 3. When ready to test Square, create/connect a Square **Sandbox** developer application and provide configuration *directly in protected environment settings*, using `SQUARE_ENVIRONMENT=sandbox` plus `SQUARE_SANDBOX_ACCESS_TOKEN`, `SQUARE_SANDBOX_LOCATION_ID`, `SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SANDBOX_WEBHOOK_URL`. Do not use live production tokens.
 4. Do not enable real payments or deploy the Vercel preview until pre-deploy security checks and all owner-only configuration are complete.
