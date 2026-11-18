@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
 
 // Live read-only smoke checks of development preview. No credentials or test writes.
 const base="https://nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev";
@@ -18,6 +19,13 @@ test("Cloudflare integrated CRM preview is reachable and not payment-enabled",as
  assert.equal(info.licenseBilling,false);
  assert.equal(info.mode,"development");
  assert.equal(info.companyData,"staging");
+ const blobs={
+  crm:execFileSync("git",["hash-object","cloud-app/functions/api/[[path]].js"],{encoding:"utf8"}).trim(),
+  pos:execFileSync("git",["hash-object","cloud-app/functions/api/pos/[[path]].js"],{encoding:"utf8"}).trim(),
+  app:execFileSync("git",["hash-object","cloud-app/public/assets/app.js"],{encoding:"utf8"}).trim(),
+ };
+ assert.deepEqual(info.blobs,blobs,"Cloudflare preview must match the current CRM and POS source code");
+
 });
 test("CRM D1 health is healthy on actual deployed preview",async()=>{
  const {response,json}=await get("/api/health");
@@ -47,4 +55,6 @@ test("static frontend is the original five-tab CRM with POS inside Finance",asyn
  assert.match(js.text,/const financeViews=\["Estimates","Invoices","Payments","Reports","POS"\]/);
  assert.match(js.text,/data-action="open-integrated-pos"/);
  assert.match(js.text,/licenseManagementContent/);
+ assert.match(js.text,/data-pos-void/);
+ assert.match(js.text,/data-pos-customer/);
 });
