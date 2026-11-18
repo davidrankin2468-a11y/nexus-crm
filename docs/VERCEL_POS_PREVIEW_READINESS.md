@@ -18,20 +18,29 @@ This file documents the **final deployment gate**. Do **not** merge pull request
 | [x] | Vercel POS code and mobile page | Secure invite-only development page `/pos-secure`, authenticated API routes, company authorization, inventory audit and unpaid receipt source implemented. Not yet verified live at the current PR commit. |
 | [x] | Vercel non-secret environment settings | `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` set for **Preview** and this feature branch only. |
 | [x] | License/subscription *database foundation* | Development license-plan, company-license and audit tables exist, RLS is enabled, user reads are revoked; no active licenses/plans or subscription processing. |
-| [x] | Square *sandbox groundwork* | Sandbox-only status and webhook-signature/input validation helpers, covered by automated tests. No Square account connected or provider transaction run. |
+| [x] | Square sandbox groundwork and mocked payment contracts | HMAC/input validation, 45-character idempotency limits, payment payload, decline/pending outcomes and amount/location checks passed automated tests. No real provider transaction. See [Square test report](SQUARE_SANDBOX_TEST_REPORT.md). |
 | [x] | Approved development Auth accounts | **Verified.** Supabase development has **2 confirmed Auth accounts**. Live password sign-in is still untested. |
 | [x] | Two company owner memberships | **Verified.** The 2 confirmed test accounts each have an **owner** membership in a different fictional QA company. |
 | [x] | Supabase database RLS/tenant isolation | **Test passed:** simulated sessions for A and B each saw their own company and temporary product only; attempts to read the other company returned 0 rows. Simulated employee read had 0 protected products. All test inserts and employee-role changes were rolled back. |
 | [ ] | Live browser/API tenant isolation | Still pending: password login, API credential test, cross-company product/sale/receipt requests, token expiry, and employee denial at the deployed host. Database-level tests do not prove this full flow. |
 | [x] | Supabase privileged server credential *configuration* | Vercel variable `SUPABASE_SERVICE_ROLE_KEY` exists as **Sensitive**, scoped only to **Preview** on this development branch. **Its secret value and actual backend connectivity remain untested**; no preview redeploy triggered. |
-| [ ] | Square sandbox account and credentials | **Blocked — owner/provider action.** Create/connect a Square *Sandbox* application, assign sandbox credentials securely; do not use production keys. |
-| [ ] | Full Square payment integration | Not implemented. Add sandbox-only server payment requests, signature-verified webhook receiver, event deduplication, settlement reconciliation, failed-payment handling and safe refunds. No real charges. |
+| [x] | Square Sandbox developer app/test location | **Confirmed by owner screenshots:** developer app and Default Test Account location exist. Full Location ID is clipped and must be copied directly. |
+| [ ] | Square Sandbox credentials for backend | **Blocked — owner action:** add protected `SQUARE_SANDBOX_ACCESS_TOKEN` and `SQUARE_SANDBOX_LOCATION_ID` to Vercel **Preview** (this branch only). Sandbox mode variable is already configured. No key values were retrieved. |
+| [ ] | Full Square payment integration | Offline mock contracts pass; live provider calls, signature-verified webhook receiver, durable event deduplication, settlement reconciliation, failed-payment handling and safe refunds remain unimplemented. No real or sandbox charges run. |
 | [ ] | Subscriptions and commercial license enforcement | Not implemented. Design plan catalog, monthly vs one-time entitlements, activation/expiry, company provisioning, webhook reconciliation, revocation and isolation. The database alone does not grant a working license. |
 | [ ] | Tax/receipt/accounting readiness | No calculated sales tax, compliant finalized receipts, or production financial reconciliation yet. Pilot receipts explicitly say **pending/unpaid**. |
 | [ ] | Operational/security release audit | MFA, authentication abuse limits, restore test, access monitoring, privacy/support policies, accessibility, mobile testing and payment safety review still needed. |
 | [ ] | Updated Cloudflare preview verified | The Cloudflare preview for the latest prior commit was **queued**, not confirmed successful. Older preview deployments exist; verify the deployed SHA before claiming it includes new changes. |
 | [ ] | Final Vercel *preview* deployment & browser acceptance | **Keep last.** Earlier Vercel previews exist, but none verified against the current PR head. After other gates, confirm preview SHA, sign-in, tenant isolation, unpaid checkout, prints, mobile UX, auth failure modes and no card charges. |
 | [ ] | Commercial production launch | Not authorized. Requires successful preview testing, payment/tax readiness, separate production controls and explicit owner approval. |
+
+### Square sandbox test report — November 18, 2026
+- [Full report with test outcomes and credential blockers](SQUARE_SANDBOX_TEST_REPORT.md).
+- Developer Sandbox application, test account and location exist (from owner's Square Console screenshots); full Location ID not captured.
+- Sandbox-only payment construction, HMAC, decline/error, amount/location mismatch and retry-key tests pass in GitHub; no outbound Square API calls.
+- Vercel Preview config now includes `SQUARE_ENVIRONMENT=sandbox`. Square token and location ID are not configured yet.
+- Square `CreatePayment` idempotency length corrected to 45 characters.
+- **Not complete**: authenticated sandbox provider requests, real provider-side deduplication, durable webhook reconciliation, refund flows, recurring licenses, hosted callback delivery.
 
 ### Verification — database tenant isolation test, November 18, 2026
 
@@ -55,7 +64,7 @@ Executed read-only Supabase RLS checks under the database role `authenticated` w
 ### User action needed before authenticated live testing
 1. **Completed:** Two confirmed development Auth accounts exist and have separate company owner memberships. Review the second account's email spelling in Supabase Authentication and confirm credentials through a real sign-in after the preview is deployed. Do not share passwords in chat.
 2. **Configured; backend value not yet validated:** Sensitive `SUPABASE_SERVICE_ROLE_KEY` is present in Vercel Preview on the development branch. Do not reveal or paste it into chat. Verify server connectivity on the final preview.
-3. Connect Square's developer **Sandbox** through protected settings when ready to test simulated payments, not live card charges.
+3. **Sandbox developer app/location exist.** Configure protected `SQUARE_SANDBOX_ACCESS_TOKEN` and complete `SQUARE_SANDBOX_LOCATION_ID` on the feature Preview branch; do not reveal either in chat. `SQUARE_ENVIRONMENT=sandbox` is already present. Webhook URL/signature await the reachable preview.
 
 ## Intended architecture
 - Source: `davidrankin2468-a11y/nexus-crm`, branch `feature/nexus-pos-crm-foundation`.
@@ -119,7 +128,7 @@ After the final **preview** deployment (not production):
 ### Additional owner-only tasks
 1. **Completed:** Two approved development Auth users are connected to separate fictional companies as owners. The second test email address may contain a typo. Verify password sign-in before live testing and do not use real customer records.
 2. Enter the development project's private Supabase service-role/secret key directly into Vercel's encrypted **Preview** branch-scoped `SUPABASE_SERVICE_ROLE_KEY`. Do not paste secrets into ChatGPT, GitHub, or source.
-3. When ready to test Square, create/connect a Square **Sandbox** developer application and provide configuration *directly in protected environment settings*, using `SQUARE_ENVIRONMENT=sandbox` plus `SQUARE_SANDBOX_ACCESS_TOKEN`, `SQUARE_SANDBOX_LOCATION_ID`, `SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY`, and `SQUARE_SANDBOX_WEBHOOK_URL`. Do not use live production tokens.
+3. **Sandbox application is created.** `SQUARE_ENVIRONMENT=sandbox` is configured. Add `SQUARE_SANDBOX_ACCESS_TOKEN` and the complete `SQUARE_SANDBOX_LOCATION_ID` privately to Vercel Preview on this branch. Add the webhook signing key and exact HTTPS URL only after the hosted callback is prepared. Do not use production tokens.
 4. Do not enable real payments or deploy the Vercel preview until pre-deploy security checks and all owner-only configuration are complete.
 
 ## After staging acceptance, before commercial launch
