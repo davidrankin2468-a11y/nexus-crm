@@ -18,7 +18,7 @@ let anonymous=false;
 globalThis.fetch=async (url,options)=>{
  const u=new URL(url);
  const b=options.body?JSON.parse(options.body):null;
- calls.push({path:u.pathname,query:u.searchParams,body:b,auth:options.headers.Authorization});
+ calls.push({path:u.pathname,query:u.searchParams,body:b,auth:options.headers.Authorization,apikey:options.headers.apikey});
  let result=null;
  if(u.pathname==='/auth/v1/token'){
   assert.equal(u.searchParams.get('grant_type'),'password');
@@ -52,6 +52,8 @@ test('invite-only login returns short-lived access token but not refresh token o
  const backend=calls.find(x=>x.path==='/auth/v1/token');
  assert.equal(backend.body.email,'owner@example.invalid');
  assert.equal(backend.body.password,'fake-password-for-test');
+ assert.equal(backend.auth,undefined); // sb_publishable keys are not JWT bearer tokens
+ assert.equal(backend.apikey,process.env.SUPABASE_PUBLISHABLE_KEY);
 });
 test('rejects cross-site credential proxying and invalid credentials body',async()=>{
  const cross=req('POST',{email:'owner@example.invalid',password:'test-password'});
@@ -88,5 +90,17 @@ test('Vercel route for separate secure pilot exists without overriding the origi
  assert.equal(html.includes('/api/pos/companies'),true);
  assert.equal(html.includes('Record unpaid sale'),true);
  assert.equal(html.includes('Retry the same sale'),true);
+});
+test('modern Supabase secret key is never sent as a JWT Bearer header',async()=>{
+ const previous=process.env.SUPABASE_SERVICE_ROLE_KEY;
+ process.env.SUPABASE_SERVICE_ROLE_KEY='sb_secret_fake_test_key';
+ try{
+  calls.length=0;const r=res();
+  await companies(req(),r);
+  assert.equal(r.code,200);
+  const x=calls.find(q=>q.path==='/rest/v1/nexus_company_members');
+  assert.equal(x.apikey,'sb_secret_fake_test_key');
+  assert.equal(x.auth,undefined);
+ }finally{process.env.SUPABASE_SERVICE_ROLE_KEY=previous}
 });
 test.after(()=>{globalThis.fetch=oldFetch;});
