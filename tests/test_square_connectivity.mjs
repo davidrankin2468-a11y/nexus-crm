@@ -83,7 +83,7 @@ globalThis.fetch=async (url,options={})=>{
  if(u.hostname==="fake-supa-for-tests.invalid"){
   if(u.pathname==="/auth/v1/user")return exampleResponse(200,{id:accountId,is_anonymous:false});
   if(u.pathname==="/rest/v1/nexus_company_members"){
-   return exampleResponse(200,[{role:membershipRole}]);
+   return exampleResponse(200,membershipRole?[{role:membershipRole}]:[]);
   }
   throw Error("Unexpected Supabase request");
  }
@@ -104,6 +104,15 @@ test("Connectivity API denies unauthenticated calls before contacting Square",as
 });
 test("Connectivity API denies employee access before contacting Square",async()=>{
  squareCalls=0;membershipRole="employee";
+ try{
+  const res=response();
+  await route(request(),res);
+  assert.equal(res.code,403);
+  assert.equal(squareCalls,0);
+ }finally{membershipRole="owner"}
+});
+test("Connectivity API denies users without membership in selected company",async()=>{
+ squareCalls=0;membershipRole=null;
  try{
   const res=response();
   await route(request(),res);
