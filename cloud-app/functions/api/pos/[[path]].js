@@ -20,6 +20,12 @@ export async function onRequest({request,env}){
    if(request.headers.get("X-Nexus-CSRF")!==user.csrf_token)return json({error:"CSRF token required"},403);
   }
   const tenant=user.tenant_id;
+  if(path==="/api/pos/licensing"&&method==="GET"){
+   const plans=await db.prepare("SELECT code,label,price_cents,currency,billing_period FROM nexus_license_plan_catalog WHERE published=0 ORDER BY price_cents").all();
+   const license=await db.prepare("SELECT id,plan_code,status,activated_at,expires_at FROM nexus_tenant_licenses WHERE tenant_id=? LIMIT 1").bind(tenant).first();
+   return json({plans:plans.results,license:license||{status:"unlicensed"},proposedOnly:true,
+    purchasesEnabled:false,subscriptionBilling:false,paymentProcessing:false});
+  }
   if(path==="/api/pos/products"&&method==="GET"){
    const r=await db.prepare("SELECT id,sku,name,price_cents,stock_quantity,active FROM pos_products WHERE tenant_id=? ORDER BY name LIMIT 500").bind(tenant).all();
    return json({items:r.results});
