@@ -120,6 +120,25 @@ test("Connectivity API denies users without membership in selected company",asyn
   assert.equal(squareCalls,0);
  }finally{membershipRole="owner"}
 });
+test("Connectivity API permits an authorized company admin",async()=>{
+ squareCalls=0;membershipRole="admin";
+ try{
+  const res=response();
+  await route(request(),res);
+  assert.equal(res.code,200);
+  assert.equal(res.body.connected,true);
+  assert.equal(squareCalls,1);
+ }finally{membershipRole="owner"}
+});
+test("Connectivity API rejects malformed company selection before contacting Square",async()=>{
+ squareCalls=0;
+ const req=request();
+ req.headers["x-nexus-company-id"]="not-a-company-uuid";
+ const res=response();
+ await route(req,res);
+ assert.equal(res.code,400);
+ assert.equal(squareCalls,0);
+});
 test("Connectivity API denies POST before contacting Square",async()=>{
  squareCalls=0;
  const res=response();
