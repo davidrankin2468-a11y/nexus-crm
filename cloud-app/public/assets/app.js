@@ -236,7 +236,7 @@ function posContent(){
  const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert;
  if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
  if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
- if(s.posView==="Reports"){const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);return nav+warn+panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td></tr>')))}
+ if(s.posView==="Reports"){const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);return nav+warn+panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount","Action"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td><td>'+(x.status==="pending"?'<button type="button" data-pos-void="'+safe(x.id)+'">Void unpaid</button>':"—")+'</td></tr>')))}
  if(s.posView==="Inventory")return nav+warn+editorPanel("Add product",'<form data-form="pos-product" class="gridform"><label>SKU<input required name="sku" pattern="[-A-Za-z0-9_]+" maxlength="60"></label><label>Product name<input required name="name" maxlength="200"></label><label>Price ($)<input required name="price" type="number" min="0" step=".01" max="1000000"></label><label>Starting stock<input required name="stock_quantity" type="number" min="0" step="1" max="1000000"></label><button class="primary" type="submit">Save product</button></form>')+panel("Inventory",table(["SKU","Name","Price","Stock"],s.posProducts.map(p=>'<tr><td>'+safe(p.sku)+'</td><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td></tr>')));
  const rows=Object.entries(s.posCart).map(([id,q])=>({p:s.posProducts.find(x=>x.id===id),q})).filter(x=>x.p&&x.q>0);
  const total=rows.reduce((a,x)=>a+x.p.price_cents*x.q,0);
@@ -878,6 +878,18 @@ document.addEventListener("click",async e=>{
  if(b.dataset.posAdd){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const p=s.posProducts.find(x=>x.id===b.dataset.posAdd);if(p&&p.active&&!s.posBusy&&(s.posCart[p.id]||0)<p.stock_quantity){s.posCart[p.id]=(s.posCart[p.id]||0)+1;draw()}return}
  if(b.dataset.posRemove){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
  if(b.dataset.action==="pos-clear"){if(posPendingRead()){notice("A checkout needs confirmation before clearing the cart.");return}s.posCart={};draw();return}
+ if(b.dataset.posVoid){
+  const saleId=b.dataset.posVoid;
+  if(!s.posSales.some(x=>x.id===saleId&&x.status==="pending")){notice("Only pending sales can be voided.");return}
+  if(!confirm("Void this UNPAID sale and restore its reserved stock? This does not refund a card."))return;
+  b.disabled=true;
+  try{
+   const result=await request("/api/pos/sales/void","POST",{sale_id:saleId,confirm:"VOID UNPAID SALE"});
+   await loadPos();notice("Unpaid sale "+result.id+" voided. Stock restored; no payment or refund processed.");
+  }catch(err){notice(err.message)}
+  finally{b.disabled=false}
+  return;
+ }
  if(b.dataset.action==="pos-refresh"){await loadPos();return}
  if(b.dataset.action==="license-refresh"){await loadLicenseInfo();return}
  if(b.dataset.action==="pos-retry"){await posCommit();return}
