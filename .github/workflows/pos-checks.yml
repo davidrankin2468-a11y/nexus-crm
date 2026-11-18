@@ -29,6 +29,10 @@ jobs:
         run: node --test tests/test_pos_retry_client.mjs
       - name: Main CRM browser JavaScript syntax
         run: node --check cloud-app/public/assets/app.js
+      - name: CRM and POS shared-navigation security assertions
+        run: node --test tests/test_crm_pos_navigation.mjs
+      - name: Existing Cloudflare CRM login, RBAC and tenant security regression
+        run: node --test cloud-app/tests/security.test.mjs
       - name: POS API JavaScript syntax
         run: node --check 'cloud-app/functions/api/pos/[[path]].js'
       - name: POS browser JavaScript syntax
