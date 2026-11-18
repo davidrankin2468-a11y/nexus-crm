@@ -19,6 +19,7 @@ function db(role="owner",options={}){
     async first(){
      if(sql.includes("FROM sessions"))return role?{tenant_id:"tenant-a",role,csrf_token:"csrf-test"}:null;
      if(sql.includes("idempotency_key"))return options.duplicate||null;
+     if(sql.includes("FROM customers"))return options.customer||null;
      if(sql.includes("FROM pos_products")&&sql.includes("active=1"))return options.product||{id:"p1",name:"Example",price_cents:250,stock_quantity:3};
      return null;
     },
@@ -107,7 +108,7 @@ test("record-only checkout stays pending and never claims payment was collected"
  const insert=r.db.batches[0].find(s=>s.sql.startsWith("INSERT INTO pos_sales"));
  assert.match(insert.sql,/'pending'/);
  assert.doesNotMatch(insert.sql,/'completed'/);
- assert.equal(insert.args.length,7);
+ assert.equal(insert.args.length,8);
 });
 test("client-provided tax is rejected until calculation and collection are implemented",async()=>{
  const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"test-no-tax-001",tax_cents:99,items:[{product_id:"p1",quantity:1}]}});
@@ -121,4 +122,30 @@ test("duplicate checkout response explicitly says pending and unpaid",async()=>{
  assert.equal(r.data.payment_charged,false);
  assert.equal(r.data.status,"pending");
  assert.equal(r.db.batches.length,0);
+});
+
+test("POS sale rejects forged cross-company CRM customer before writing",async()=>{
+ const r=await call("/api/pos/sales",{
+  method:"POST",body:{
+   idempotency_key:"cross-tenant-customer-001",tax_cents:0,
+   customer_id:"11111111-1111-4111-8111-111111111111",
+   items:[{product_id:"p1",quantity:1}]
+  }
+ });
+ assert.equal(r.response.status,404);
+ assert.equal(r.db.batches.length,0);
+ const q=r.db.calls.find(x=>x.sql.includes("FROM customers"));
+ assert.deepEqual(q.args,["tenant-a","11111111-1111-4111-8111-111111111111"]);
+});
+test("POS sale preserves approved CRM customer association",async()=>{
+ const id="11111111-1111-4111-8111-111111111111";
+ const r=await call("/api/pos/sales",{
+  method:"POST",options:{customer:{id}},body:{
+   idempotency_key:"approved-crm-customer-01",tax_cents:0,customer_id:id,
+   items:[{product_id:"p1",quantity:1}]
+  }
+ });
+ assert.equal(r.response.status,201);
+ const insert=r.db.batches[0].find(x=>x.sql.startsWith("INSERT INTO pos_sales"));
+ assert.equal(insert.args[2],id);
 });
