@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,licenseInfo:null,licenseError:"",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -358,7 +358,7 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
-const managementTabs=["Backups","Security","Sales Leads","Companies","Team Access"];
+const managementTabs=["Backups","Security","Licensing","Sales Leads","Companies","Team Access"];
 function describeBackupCounts(counts){
  const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
  return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
@@ -573,12 +573,27 @@ function teamAccessContent(){
   panel("Invitations · "+s.staffInvites.length,table(["Email","Role","Status","Action"],invites));
 }
 
+async function loadLicenseInfo(){
+ try{const info=await request("/api/pos/licensing");s.licenseInfo=info;s.licenseError="";}
+ catch(err){s.licenseError=err.message||"License catalog unavailable";s.licenseInfo=null}
+ draw();
+}
+function licenseManagementContent(){
+ if(s.licenseError)return panel("License information unavailable",'<p>'+safe(s.licenseError)+'</p><button data-action="license-refresh" type="button">Retry</button>');
+ if(!s.licenseInfo)return panel("Nexus Software licensing",'<p>Loading your company license status…</p><button data-action="license-refresh" type="button">Refresh</button>');
+ const info=s.licenseInfo,license=info.license||{status:"unlicensed"};
+ const cards=(info.plans||[]).map(p=>'<div class="card"><strong>'+safe(p.label)+'</strong><p>'+money(p.price_cents/100)+' / '+safe(p.billing_period)+'</p><small class="muted">Proposed plan · not available for purchase</small></div>').join("");
+ return panel("Nexus CRM licensing",'<p><strong>Company status:</strong> '+safe(license.status||"unlicensed")+'</p>'+
+  '<p class="panel-note">These prices are draft options. Square billing and license activation are disabled until verified webhooks, company provisioning, taxes, and owner approval are complete.</p>'+
+  '<div class="cards">'+cards+'</div><div class="actionrow"><button data-action="license-refresh" type="button">Refresh license status</button></div>');
+}
 function managementContent(){
  const nav=sectionNav(managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator),s.managementView,"management","Management sections");
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
  if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
  if(s.managementView==="Companies")return nav+companyAccessContent();
  if(s.managementView==="Team Access")return nav+teamAccessContent();
+ if(s.managementView==="Licensing")return nav+licenseManagementContent();
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -818,7 +833,7 @@ document.addEventListener("click",async e=>{
  }
  if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");if(s.financeView==="POS")await loadPos();return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
- if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");if(s.managementView==="Licensing")await loadLicenseInfo();return}
  if(b.dataset.action==="copy-company-invite"){
   if(!s.newInvite)return;
   const link=location.origin+"/#invite="+s.newInvite.token;
@@ -864,6 +879,7 @@ document.addEventListener("click",async e=>{
  if(b.dataset.posRemove){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
  if(b.dataset.action==="pos-clear"){if(posPendingRead()){notice("A checkout needs confirmation before clearing the cart.");return}s.posCart={};draw();return}
  if(b.dataset.action==="pos-refresh"){await loadPos();return}
+ if(b.dataset.action==="license-refresh"){await loadLicenseInfo();return}
  if(b.dataset.action==="pos-retry"){await posCommit();return}
  if(b.dataset.action==="pos-record"){await posCommit();return}
  if(b.dataset.action==="retry"){await start();return}
