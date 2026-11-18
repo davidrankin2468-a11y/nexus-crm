@@ -26,13 +26,23 @@ This file documents the **final deployment gate**. Do **not** merge pull request
 | [x] | Supabase privileged server credential *configuration* | Vercel variable `SUPABASE_SERVICE_ROLE_KEY` exists as **Sensitive**, scoped only to **Preview** on this development branch. **Its secret value and actual backend connectivity remain untested**; no preview redeploy triggered. |
 | [x] | Square Sandbox developer app/test location | **Confirmed by owner screenshots:** developer app and Default Test Account location exist. Full Location ID is clipped and must be copied directly. |
 | [ ] | Square Sandbox credentials for backend | **Blocked — owner action:** add protected `SQUARE_SANDBOX_ACCESS_TOKEN` and `SQUARE_SANDBOX_LOCATION_ID` to Vercel **Preview** (this branch only). Sandbox mode variable is already configured. No key values were retrieved. |
-| [ ] | Full Square payment integration | Offline mock contracts pass; live provider calls, signature-verified webhook receiver, durable event deduplication, settlement reconciliation, failed-payment handling and safe refunds remain unimplemented. No real or sandbox charges run. |
+| [x] | Sandbox payment/event persistence foundation | Tenant-scoped payment attempts and unique webhook-event IDs added to development Supabase; 7 rollback-only constraint tests passed. No settlement/reconciliation system is active. |\n| [ ] | Full Square payment integration | Offline mock contracts pass; live provider calls, signature-verified webhook receiver, durable event deduplication, settlement reconciliation, failed-payment handling and safe refunds remain unimplemented. No real or sandbox charges run. |
 | [ ] | Subscriptions and commercial license enforcement | Not implemented. Design plan catalog, monthly vs one-time entitlements, activation/expiry, company provisioning, webhook reconciliation, revocation and isolation. The database alone does not grant a working license. |
 | [ ] | Tax/receipt/accounting readiness | No calculated sales tax, compliant finalized receipts, or production financial reconciliation yet. Pilot receipts explicitly say **pending/unpaid**. |
 | [ ] | Operational/security release audit | MFA, authentication abuse limits, restore test, access monitoring, privacy/support policies, accessibility, mobile testing and payment safety review still needed. |
 | [ ] | Updated Cloudflare preview verified | The Cloudflare preview for the latest prior commit was **queued**, not confirmed successful. Older preview deployments exist; verify the deployed SHA before claiming it includes new changes. |
 | [ ] | Final Vercel *preview* deployment & browser acceptance | **Keep last.** Earlier Vercel previews exist, but none verified against the current PR head. After other gates, confirm preview SHA, sign-in, tenant isolation, unpaid checkout, prints, mobile UX, auth failure modes and no card charges. |
 | [ ] | Commercial production launch | Not authorized. Requires successful preview testing, payment/tax readiness, separate production controls and explicit owner approval. |
+
+### Latest Square state and cleanup — November 18, 2026
+
+- [x] `SQUARE_SANDBOX_ACCESS_TOKEN` and `SQUARE_SANDBOX_LOCATION_ID` are present as **Sensitive** values, scoped to the intended Vercel Preview branch (values remain protected).
+- [x] `SQUARE_ENVIRONMENT=sandbox` is configured in Preview and the old Production Square access-token record is absent.
+- [x] Added owner/admin-protected **read-only** `GET /api/square/sandbox-connectivity` endpoint and successful mocked tests (does not charge cards, edit records, or validate actual secret values).
+- [x] Applied developer-only `supabase/sql/nexus_square_sandbox_payment_state.sql` and verified **seven rollback-only** duplicate-event, tenant-FK, USD-currency, and happy-path database checks. No test rows remain.
+- [ ] **Cleanup needed in Vercel:** an unintended Production-targeted `SQUARE_SANDBOX_LOCATION_ID` record remains present. Its value was changed to the harmless literal `DISABLED` with explicit owner permission; the connected Vercel tool does not provide deletion. Manually delete **only this Production record** using Vercel Settings > Environment Variables. Do not delete the correctly scoped Preview record.
+- [ ] **Provider connection still not tested:** call read-only endpoint from a current deployed authenticated Preview once owner allows final preview acceptance. Passing mocked tests and stored env vars is not an actual Square API connection.
+- [ ] Supabase security advisor flags **leaked-password protection** not enabled; review this before commercial production. Private server-only tables intentionally have RLS enabled with no client policies.
 
 ### Square sandbox test report — November 18, 2026
 - [Full report with test outcomes and credential blockers](SQUARE_SANDBOX_TEST_REPORT.md).
