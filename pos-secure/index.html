@@ -17,6 +17,7 @@ small,.subtle{color:#c0cfdd}.ok{color:#b6ff76}.error{color:#ffadad}
 table{width:100%;border-collapse:collapse;min-width:450px}th,td{text-align:left;border-bottom:1px solid #365069;padding:9px 6px}td:last-child,th:last-child{text-align:right}.scroll{overflow:auto}
 #message{min-height:2em;white-space:pre-wrap}#message.error{color:#ffadad}
 .total{font-size:1.5rem;color:#b6ff76;font-weight:800}a{color:#b6ff76}
+@media print{header,.notice,#message,main>.subtle,#workspace>.grid,#workspace>.card.controls,#pendingWarning{display:none!important}#receiptPanel{display:block!important;border:0;background:white;color:black}#receiptPanel button{display:none!important}body{background:white;color:black}}
 @media(max-width:640px){main{padding:14px 10px 40px}header{padding:14px 10px}.card{padding:14px}.grid{grid-template-columns:1fr}}
 </style></head>
 <body><header><strong>NEXUS POS + CRM</strong><small>Secure Vercel pilot · development access only</small></header>
@@ -51,8 +52,10 @@ table{width:100%;border-collapse:collapse;min-width:450px}th,td{text-align:left;
 <label>Opening stock<input name="stock" type="number" required min="0" max="1000000" step="1"></label>
 <button type="submit">Save item</button></form></section>
 <section class="card"><h2>Recorded sales</h2><p class="subtle">Receipts here are pending/unpaid. They are not settled payments.</p>
-<div class="scroll"><table><thead><tr><th>Receipt</th><th>Status</th><th>Amount</th></tr></thead><tbody id="sales"></tbody></table></div></section>
-</div></div>
+<div class="scroll"><table><thead><tr><th>Receipt</th><th>Status</th><th>Amount</th><th>Details</th></tr></thead><tbody id="sales"></tbody></table></div></section>
+</div>
+<section class="card" id="receiptPanel" hidden><h2>Unpaid POS receipt</h2><div id="receiptDetails"></div><button type="button" class="secondary" id="printReceipt">Print receipt</button></section>
+</div>
 <p class="subtle">GitHub development branch preview only. Do not use for real transactions until payment, security and release reviews are complete.</p>
 </main>
 <script>
@@ -95,7 +98,7 @@ async function api(path,method="GET",body=null,auth=true){
 }
 function clearSession(){
  token="";email="";companyId="";companies=[];products=[];sales=[];cart.clear();pending=null;
- $("workspace").hidden=true;$("loginScreen").hidden=false;$("password").value="";
+ $("workspace").hidden=true;$("receiptPanel").hidden=true;$("loginScreen").hidden=false;$("password").value="";
 }
 function row(fields,button){
  const tr=document.createElement("tr");
@@ -127,7 +130,11 @@ function render(){
  $("reload").disabled=busy;
  $("productForm").querySelector("button").disabled=busy||!!pending;
  $("sales").replaceChildren();
- for(const x of sales){$("sales").append(row([String(x.id).slice(0,8),x.status==="pending"?"Pending / unpaid":x.status,fmt(x.total_cents)]))}
+ for(const x of sales){
+  const button=document.createElement("button");button.textContent="View";button.className="secondary";button.disabled=busy;
+  button.addEventListener("click",()=>work(()=>viewReceipt(x.id)));
+  $("sales").append(row([String(x.id).slice(0,8),x.status==="pending"?"Pending / unpaid":x.status,fmt(x.total_cents)],button));
+ }
 }
 async function refresh(){
  if(!companyId)return;
@@ -142,6 +149,7 @@ async function work(action){
  finally{busy=false;render()}
 }
 async function selectCompany(){
+ $("receiptPanel").hidden=true;
  companyId=$("companySelect").value;
  cart.clear();pending=restorePending();products=[];sales=[];render();
  await refresh();
@@ -176,6 +184,25 @@ $("productForm").addEventListener("submit",e=>{
   e.target.reset();await refresh();showMessage("Inventory item saved to your selected company");
  });
 });
+async function viewReceipt(id){
+ const details=await api("/api/pos/receipts?sale_id="+encodeURIComponent(id));
+ const area=$("receiptDetails");area.replaceChildren();
+ const addLine=(title,value)=>{
+  const p=document.createElement("p");p.textContent=title+": "+String(value);area.append(p);
+ };
+ addLine("Receipt reference",details.sale.id);
+ addLine("Payment status","PENDING / UNPAID — NO PAYMENT COLLECTED");
+ addLine("Company",$("companySelect").selectedOptions[0].text);
+ for(const item of details.items){
+  addLine(item.product_name, String(item.quantity)+" × "+fmt(item.unit_price_cents)+" = "+fmt(item.line_total_cents));
+ }
+ addLine("Subtotal",fmt(details.sale.subtotal_cents));
+ addLine("Tax","Not calculated");
+ addLine("Unpaid total",fmt(details.sale.total_cents));
+ $("receiptPanel").hidden=false;
+ $("receiptPanel").scrollIntoView({behavior:"smooth",block:"start"});
+}
+$("printReceipt").addEventListener("click",()=>window.print());
 async function record(){
  const items=[...cart].filter(([,q])=>q>0).map(([product_id,quantity])=>({product_id,quantity}));
  if(!pending&&!items.length)return;
