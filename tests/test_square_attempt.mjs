@@ -6,7 +6,7 @@ const args={companyId,saleId,idempotencyKey:"attempt-0001",locationId:"FAKE_LOC_
 test("preparation reads only the authorized company sale and persists server total",async()=>{
  let writes=0;
  const result=await prepareSquareSandboxAttempt({...args,db:async(path,options)=>{
-  if(!options){assert.match(path,/company_id=eq%2E11111111/);assert.match(path,/id=eq%2E22222222/);return [{id:saleId,status:"pending",total_cents:1499}]}
+  if(!options){const query=new URL(path,"https://example.invalid").searchParams;assert.equal(query.get("company_id"),"eq."+companyId);assert.equal(query.get("id"),"eq."+saleId);return [{id:saleId,status:"pending",total_cents:1499}]}
   writes++;assert.equal(options.method,"POST");assert.equal(options.body.amount_cents,1499);
   assert.equal(options.body.company_id,companyId);return [{...options.body,id:"attempt-id"}];
  }});
