@@ -41,7 +41,7 @@ function notice(text){
 function authScreen(mode){
  s.account=null;s.csrf="";s.newMfaSecret=null;s.mfaChallenge=null;
  const setup=mode==="setup";
- $("mount").innerHTML='<div class="auth"><h1>'+ (setup?"Set up Nexus CRM":"Nexus CRM Sign In") +'</h1>'+
+ $("mount").innerHTML='<div class="auth"><h1>'+ (setup?"Set up Nexus CRM":"Sign in to Nexus CRM") +'</h1>'+
  '<p>'+(setup?"Create your first private company administrator account.":"Sign in to your private cloud CRM.")+'</p>'+
  '<form data-form="'+(setup?"setup":"login")+'">'+
  (setup?'<label>One-time setup code<input name="setupCode" required minlength="30" autocomplete="off" placeholder="Paste your setup code"></label>'+
