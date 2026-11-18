@@ -236,7 +236,16 @@ function posContent(){
  const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert;
  if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
  if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
- if(s.posView==="Reports"){const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);return nav+warn+panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount","Action"],s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td><td>'+(x.status==="pending"?'<button type="button" data-pos-void="'+safe(x.id)+'">Void unpaid</button>':"—")+'</td></tr>')))}
+ if(s.posView==="Reports"){
+  const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);
+  const rows=s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td><td>'+(x.status==="pending"?'<button type="button" data-pos-void="'+safe(x.id)+'">Void unpaid</button>':"—")+'</td></tr>');
+  const records=panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount","Action"],rows));
+  const exportPanel=s.account?.role==="owner"?panel("Encrypted POS backup",'<p>Download company-scoped inventory, sales, sale lines, stock movements, refunds, and event records encrypted with a backup passphrase on this device. No password or card data is exported. Independent restoration is not implemented yet.</p>'+
+    '<form data-form="pos-download" class="gridform"><label>Backup passphrase<input required type="password" name="backupPassphrase" minlength="12" maxlength="256" autocomplete="new-password"></label>'+
+    '<label>Repeat backup passphrase<input required type="password" name="confirmPassphrase" minlength="12" maxlength="256" autocomplete="new-password"></label>'+
+    '<div class="actionrow"><button type="submit" class="primary">Download encrypted POS records</button></div></form>'):"";
+  return nav+warn+records+exportPanel;
+ }
  if(s.posView==="Inventory")return nav+warn+editorPanel("Add product",'<form data-form="pos-product" class="gridform"><label>SKU<input required name="sku" pattern="[-A-Za-z0-9_]+" maxlength="60"></label><label>Product name<input required name="name" maxlength="200"></label><label>Price ($)<input required name="price" type="number" min="0" step=".01" max="1000000"></label><label>Starting stock<input required name="stock_quantity" type="number" min="0" step="1" max="1000000"></label><button class="primary" type="submit">Save product</button></form>')+panel("Inventory",table(["SKU","Name","Price","Stock"],s.posProducts.map(p=>'<tr><td>'+safe(p.sku)+'</td><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td></tr>')));
  const rows=Object.entries(s.posCart).map(([id,q])=>({p:s.posProducts.find(x=>x.id===id),q})).filter(x=>x.p&&x.q>0);
  const total=rows.reduce((a,x)=>a+x.p.price_cents*x.q,0);
@@ -392,7 +401,7 @@ function exportLeadsCsv(){
  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-async function encryptedBackupDownload(data,passphrase){
+async function encryptedBackupDownload(data,passphrase,kind="crm"){
  if(!globalThis.crypto?.subtle)throw Error("Your browser does not support secure encrypted file exports.");
  if(passphrase.length<12||passphrase.length>256)throw Error("Backup passphrase must be 12–256 characters.");
  const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
@@ -417,7 +426,7 @@ async function encryptedBackupDownload(data,passphrase){
  const content=new Blob([JSON.stringify(packageData,null,2)],{type:"application/json"});
  const url=URL.createObjectURL(content);
  const anchor=document.createElement("a");
- anchor.href=url;anchor.download="nexus-crm-encrypted-backup-"+localDate()+".json";
+ anchor.href=url;anchor.download="nexus-"+(kind==="pos"?"pos":"crm")+"-encrypted-backup-"+localDate()+".json";
  document.body.appendChild(anchor);anchor.click();anchor.remove();
  setTimeout(()=>URL.revokeObjectURL(url),5000);
  return true;
@@ -442,9 +451,9 @@ async function verifyLocalEncryptedBackup(file,passphrase){
  try{decoded=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,data)}
  catch{throw Error("Cannot decrypt this backup. Check your passphrase or file integrity.")}
  const parsed=JSON.parse(new TextDecoder().decode(decoded));
- if(parsed?.format!=="nexus-crm-business-export-v1"||parsed.schemaVersion!==1||!parsed.records||typeof parsed.records!=="object")
+ if(!["nexus-crm-business-export-v1","nexus-pos-company-export-v1"].includes(parsed?.format)||parsed.schemaVersion!==1||!parsed.records||typeof parsed.records!=="object")
   throw Error("Decrypted file is not a supported Nexus CRM business export.");
- const keys=["customers","employees","jobs","estimates","invoices","appointments","payments"];
+ const keys=parsed.format==="nexus-pos-company-export-v1"?["pos_products","pos_sales","pos_sale_items","pos_inventory_movements","pos_refunds","pos_payment_events"]:["customers","employees","jobs","estimates","invoices","appointments","payments"];
  for(const k of keys){if(!Array.isArray(parsed.records[k]))throw Error("Backup is missing "+k+" records.")}
  return {createdAt:parsed.createdAt,company:parsed.company,counts:Object.fromEntries(keys.map(k=>[k,parsed.records[k].length]))};
 }
@@ -1009,6 +1018,14 @@ document.addEventListener("submit",async e=>{
    const verified=await verifyLocalEncryptedBackup(data.backupFile,data.backupPassphrase);
    notice("Encrypted backup verified for "+verified.company+": "+describeBackupCounts(verified.counts)+". File was checked locally, not uploaded.");
    f.reset();return;
+  }
+  if(type==="pos-download"){
+   if(s.account?.role!=="owner")throw Error("Only the company owner can export POS records.");
+   if(data.backupPassphrase!==data.confirmPassphrase)throw Error("The POS backup passphrases do not match.");
+   if(String(data.backupPassphrase).length<12)throw Error("Use a backup passphrase of at least 12 characters.");
+   const records=await request("/api/pos/export");
+   await encryptedBackupDownload(records,data.backupPassphrase,"pos");
+   notice("Encrypted POS records saved to your device. Keep the file and passphrase secure; independent restoration requires support.");return;
   }
   if(type==="download-backup"){
    if(data.backupPassphrase!==data.confirmPassphrase)throw Error("The backup passphrases do not match.");
