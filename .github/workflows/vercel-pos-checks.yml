@@ -11,8 +11,10 @@ on:
       - 'api/square/**'
       - 'lib/nexus-square-sandbox.js'
       - 'lib/nexus-square-connectivity.js'
+      - 'lib/nexus-square-payment-transport.js'
       - 'tests/test_square_sandbox.mjs'
       - 'tests/test_square_connectivity.mjs'
+      - 'tests/test_square_payment_transport.mjs'
       - 'vercel.json'
       - '.github/workflows/vercel-pos-checks.yml'
   pull_request:
@@ -25,8 +27,10 @@ on:
       - 'api/square/**'
       - 'lib/nexus-square-sandbox.js'
       - 'lib/nexus-square-connectivity.js'
+      - 'lib/nexus-square-payment-transport.js'
       - 'tests/test_square_sandbox.mjs'
       - 'tests/test_square_connectivity.mjs'
+      - 'tests/test_square_payment_transport.mjs'
       - 'vercel.json'
       - '.github/workflows/vercel-pos-checks.yml'
 permissions:
@@ -53,6 +57,7 @@ jobs:
           node --check api/square/sandbox-status.js
           node --check lib/nexus-square-sandbox.js
           node --check lib/nexus-square-connectivity.js
+          node --check lib/nexus-square-payment-transport.js
           node --check api/square/sandbox-connectivity.js
       - name: Run POS security and API tests
-        run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs
+        run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs tests/test_square_payment_transport.mjs
