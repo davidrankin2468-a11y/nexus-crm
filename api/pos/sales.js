@@ -12,6 +12,6 @@ export default async function handler(req,res){
   if(!validSale(req.body))return respond(res,400,{error:"Invalid sale or nonzero tax. No payment was charged."});
   const {items,idempotency_key}=req.body;
   const saleId=await database("/rest/v1/rpc/nexus_record_pos_sale",{method:"POST",body:{p_company_id:a.companyId,p_actor_id:a.userId,p_items:items,p_idempotency_key:idempotency_key}});
-  return respond(res,201,{id:saleId,recorded_only:true,payment_charged:false});
+  return respond(res,201,{id:saleId,status:"pending",recorded_only:true,payment_charged:false});
  }catch{return respond(res,503,{error:"Sale rejected or service unavailable. Reuse the original idempotency key before retrying."})}
 }
