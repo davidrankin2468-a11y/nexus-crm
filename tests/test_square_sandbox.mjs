@@ -83,6 +83,14 @@ test("mocked success requires matching amount/location and reconciliation",()=>{
   {providerCompleted:false,reconciliationRequired:false,reason:"LOCATION_MISMATCH"});
 });
 
+test("completed Square payment cannot reconcile against another sale reference",()=>{
+ const context={amountCents:3199,locationId:"FAKE_SANDBOX_LOC_01",referenceId:"sale-A"};
+ const payment={id:"fake-payment",status:"COMPLETED",amount_money:{amount:3199,currency:"USD"},location_id:context.locationId,reference_id:"sale-B"};
+ assert.deepEqual(inspectSquareSandboxPaymentResponse(200,{payment},context),
+  {providerCompleted:false,reconciliationRequired:false,reason:"REFERENCE_MISMATCH"});
+ assert.equal(inspectSquareSandboxPaymentResponse(200,{payment:{...payment,reference_id:"sale-A"}},context).reconciliationRequired,true);
+ assert.equal(inspectSquareSandboxPaymentResponse(200,{payment:{...payment,reference_id:undefined}},context).providerCompleted,false);
+});
 test("mocked declines, failed payments, and pending status cannot mark a sale paid",()=>{
  const context={amountCents:3199,locationId:"FAKE_SANDBOX_LOC_01"};
  assert.equal(inspectSquareSandboxPaymentResponse(400,{errors:[{code:"CARD_DECLINED"}]},context).providerCompleted,false);
