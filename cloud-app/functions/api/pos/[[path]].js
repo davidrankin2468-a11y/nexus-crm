@@ -20,6 +20,29 @@ export async function onRequest({request,env}){
    if(request.headers.get("X-Nexus-CSRF")!==user.csrf_token)return json({error:"CSRF token required"},403);
   }
   const tenant=user.tenant_id;
+  if(path==="/api/pos/export"&&method==="GET"){
+   // Owner-only business record export. The browser encrypts it with a separate
+   // user-chosen passphrase. No passwords, sessions, tokens, or card data included.
+   if(user.role!=="owner")return json({error:"Owner required for POS export"},403);
+   const defs=[
+    ["pos_products","id,sku,name,price_cents,stock_quantity,active,created_at,updated_at"],
+    ["pos_sales","id,customer_id,status,subtotal_cents,tax_cents,total_cents,refunded_cents,currency,idempotency_key,created_at,completed_at"],
+    ["pos_sale_items","id,sale_id,product_id,product_name,quantity,unit_price_cents,line_total_cents"],
+    ["pos_inventory_movements","id,product_id,sale_id,quantity_delta,reason,created_at"],
+    ["pos_refunds","id,sale_id,amount_cents,reason,provider_refund_id,idempotency_key,created_at"],
+    ["pos_payment_events","id,sale_id,provider,provider_event_id,event_type,amount_cents,created_at"]
+   ];
+   const queries=defs.map(([table,columns])=>db.prepare("SELECT "+columns+" FROM "+table+" WHERE tenant_id=? ORDER BY id LIMIT 1001").bind(tenant));
+   const results=await db.batch(queries),records={},counts={};
+   for(let i=0;i<defs.length;i++){
+    const table=defs[i][0],list=results[i]?.results||[];
+    if(list.length>1000)return json({error:"POS export exceeds current safe record limit"},413);
+    records[table]=list;counts[table]=list.length;
+   }
+   return json({format:"nexus-pos-company-export-v1",schemaVersion:1,
+    companyScoped:true,createdAt:now(),counts,records,
+    encryptedOnServer:false,cardDataIncluded:false});
+  }
   if(path==="/api/pos/licensing"&&method==="GET"){
    const plans=await db.prepare("SELECT code,label,price_cents,currency,billing_period FROM nexus_license_plan_catalog WHERE published=0 ORDER BY price_cents").all();
    const license=await db.prepare("SELECT id,plan_code,status,activated_at,expires_at FROM nexus_tenant_licenses WHERE tenant_id=? LIMIT 1").bind(tenant).first();
