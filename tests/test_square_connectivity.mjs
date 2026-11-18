@@ -32,7 +32,7 @@ test("Read-only request is fixed to Square Sandbox Locations and does not return
  assert.equal(JSON.stringify(result).includes(location),false);
 });
 test("Wrong or disabled location cannot pass",async()=>{
- for(const locations of [[{id:"A_DIFFERENT_LOCATION",status:"ACTIVE"}],[{id:location,status:"INACTIVE"}]]){
+ for(const locations of [[{id:"A_DIFFERENT_LOCATION",status:"ACTIVE"}],[{id:location,status:"INACTIVE"}],[{id:location,status:"UNKNOWN"}],[{id:location}]]){
   const result=await checkSquareSandboxLocation({env,fetchImpl:async()=>exampleResponse(200,{locations})});
   assert.deepEqual(result,{connected:false,reason:"SQUARE_LOCATION_NOT_FOUND"});
  }
