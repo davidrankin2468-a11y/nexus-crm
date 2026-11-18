@@ -1,0 +1,50 @@
+name: Nexus CRM license foundation checks
+on:
+  push:
+    branches: [feature/nexus-license-manager-foundation]
+    paths:
+      - "cloud-app/license-engine.js"
+      - "cloud-app/license-engine.test.mjs"
+      - "cloud-app/migrations/006_license_manager.sql"
+      - ".github/workflows/license-checks.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  license-foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: JavaScript license rules
+        run: |
+          node --check cloud-app/license-engine.js
+          node cloud-app/license-engine.test.mjs
+      - name: Apply license migration in isolated SQLite (never production)
+        run: |
+          python3 - <<'PY'
+          import sqlite3
+          from pathlib import Path
+          db=sqlite3.connect(":memory:")
+          db.execute("PRAGMA foreign_keys = ON")
+          db.execute("CREATE TABLE tenants (id TEXT PRIMARY KEY)")
+          script=Path("cloud-app/migrations/006_license_manager.sql").read_text()
+          db.executescript(script)
+          assert db.execute("PRAGMA foreign_key_check").fetchall()==[]
+          rows=db.execute("SELECT code,monthly_price_cents FROM license_plans ORDER BY monthly_price_cents").fetchall()
+          assert rows==[("starter",4900),("business",9900),("premium",14900)], rows
+          assert db.execute("SELECT COUNT(*) FROM license_entitlements").fetchone()[0]==15
+          db.execute("INSERT INTO tenants VALUES ('test-company')")
+          db.execute("INSERT INTO tenant_licenses(id,tenant_id,plan_code,status,created_at,updated_at) VALUES('l1','test-company','starter','pending',1,1)")
+          db.commit()
+          assert db.execute("PRAGMA foreign_key_check").fetchall()==[]
+          try:
+            db.execute("INSERT INTO tenant_licenses(id,tenant_id,plan_code,status,created_at,updated_at) VALUES('l2','wrong-company','starter','active',1,1)")
+            raise AssertionError("Unknown tenant was incorrectly accepted")
+          except sqlite3.IntegrityError:
+            pass
+          print("Isolated license migration, pricing, entitlements and tenant FK checks passed")
+          PY
