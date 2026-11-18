@@ -42,6 +42,25 @@ export async function onRequest({request,env}){
    await db.batch(writes);
    return json({id},201);
   }
+  if(path==="/api/pos/sales/void"&&method==="POST"){
+   // This records cancellation of an UNPAID checkout only: never a Square refund.
+   const v=await bodyOf(request);
+   if(typeof v.sale_id!=="string"||!/^[a-f0-9]{8}-[a-f0-9-]{27,31}$/i.test(v.sale_id)||v.confirm!=="VOID UNPAID SALE")
+    return json({error:"Valid unpaid receipt ID and confirmation required"},400);
+   const existing=await db.prepare("SELECT status FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+   if(!existing)return json({error:"Sale not found for this company"},404);
+   if(existing.status==="voided")return json({id:v.sale_id,status:"voided",duplicate:true,payment_charged:false,refund_processed:false});
+   if(existing.status!=="pending")return json({error:"Only pending/unpaid sales can be voided"},409);
+   // D1 trigger 013 atomically restores inventory exactly once on pending -> voided.
+   const result=await db.prepare("UPDATE pos_sales SET status='voided' WHERE tenant_id=? AND id=? AND status='pending'").bind(tenant,v.sale_id).run();
+   const changed=Number(result?.meta?.changes??result?.changes??0);
+   if(changed!==1){
+    const latest=await db.prepare("SELECT status FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+    if(latest?.status==="voided")return json({id:v.sale_id,status:"voided",duplicate:true,payment_charged:false,refund_processed:false});
+    return json({error:"Sale state changed; refresh before retrying"},409);
+   }
+   return json({id:v.sale_id,status:"voided",inventory_restored:true,payment_charged:false,refund_processed:false});
+  }
   if(path==="/api/pos/sales"&&method==="GET"){
    const r=await db.prepare("SELECT s.id,s.customer_id,c.name AS customer_name,s.status,s.subtotal_cents,s.tax_cents,s.total_cents,s.created_at FROM pos_sales s LEFT JOIN customers c ON c.id=s.customer_id AND c.tenant_id=s.tenant_id WHERE s.tenant_id=? ORDER BY s.created_at DESC LIMIT 100").bind(tenant).all();
    return json({items:r.results});
