@@ -8,6 +8,14 @@
     {
       "source": "/pos/",
       "destination": "/pos-demo/index.html"
+    },
+    {
+      "source": "/pos-secure",
+      "destination": "/pos-secure/index.html"
+    },
+    {
+      "source": "/pos-secure/",
+      "destination": "/pos-secure/index.html"
     }
   ]
 }
