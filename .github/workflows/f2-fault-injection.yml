@@ -1,0 +1,20 @@
+name: F2 fault injection
+on:
+  push:
+    branches: [feature/nexus-pos-crm-foundation]
+    paths:
+      - 'cloud-app/public/assets/app.js'
+      - 'qa/f2-fault-injection.test.cjs'
+      - '.github/workflows/f2-fault-injection.yml'
+  workflow_dispatch:
+jobs:
+  f2:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test qa/f2-fault-injection.test.cjs
