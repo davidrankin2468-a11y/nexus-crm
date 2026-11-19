@@ -67,3 +67,12 @@
 - Locations and sandbox tests: https://developer.squareup.com/docs/devtools/sandbox/testing
 - CreatePayment API: https://developer.squareup.com/reference/square/payments-api/create-payment
 - Webhook signature verification: https://developer.squareup.com/docs/webhooks/step3validate
+
+## November 18 follow-up — credential presence and security checks
+
+- Confirmed through Vercel project settings that `SQUARE_SANDBOX_MERCHANT_ID` now exists for **Preview** and the `feature/nexus-pos-crm-foundation` branch. Sandbox access token, location ID, Supabase keys and `SQUARE_ENVIRONMENT` are also present. Values were not read or copied.
+- Presence is **not** proof the credentials work: a live read-only Square provider request remains unverified.
+- Added API regression cases for JSON-only requests, disabled sandbox mode, wrong Square merchant, and failed reconciliation RPC. These tests are **committed but have not been confirmed running successfully in CI**.
+- Development Supabase rollback-only SQL checks confirmed pending attempts cannot be reconciled and that a payment attempt cannot reference another company's sale. Anonymous and authenticated database roles cannot issue/change licenses or forge/reconcile payment attempts.
+- Vercel Hobby deployment failed with `exceeded_serverless_functions_per_deployment` (limit 12). The successful older deployment is not evidence that the new reconciliation API is live. Cloudflare remains the primary staging target; no paid-plan upgrade was authorized.
+- Do not activate live payments, merge into main, or advertise commercial readiness until end-to-end sandbox provider, webhook, refunds, authentication, tenant isolation, and deployment checks pass.
