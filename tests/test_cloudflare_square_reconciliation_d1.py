@@ -5,6 +5,7 @@ import unittest
 ROOT=pathlib.Path(__file__).resolve().parents[1]/"cloudflare"/"migrations"
 V1=(ROOT/"0001_square_sandbox_attempts.sql").read_text()
 V2=(ROOT/"0002_square_sandbox_reconciliation.sql").read_text()
+V3=(ROOT/"0003_square_sandbox_submission_reconcile.sql").read_text()
 SALE="f341ff51-0adb-487f-8ac0-b0f9a58945fd"
 SALE_B="9b843782-2931-4337-a9b5-130510279f64"
 PAYMENT="sq-test-payment-123456789"
@@ -34,6 +35,7 @@ class ReconcileTransactionTests(unittest.TestCase):
   self.db.execute("INSERT INTO pos_sales(id,tenant_id,status,total_cents,currency) VALUES(?, 'B','pending',1250,'USD')",(SALE_B,))
   self.db.executescript(V1)
   self.db.executescript(V2)
+  self.db.executescript(V3)
   self.db.execute("""INSERT INTO pos_square_sandbox_payment_attempts
     (id,tenant_id,sale_id,idempotency_key,square_location_id,amount_cents,currency,status,created_at,updated_at)
     VALUES ('attempt-A','A',?,'idem-key-A','SQUARE_LOC',1250,'USD','prepared',100,100)""",(SALE,))
@@ -64,6 +66,21 @@ class ReconcileTransactionTests(unittest.TestCase):
     self.db.execute("UPDATE pos_square_sandbox_payment_attempts SET status='reconciled',provider_payment_id='other-payment-123' WHERE id='attempt-A'")
   self.assertEqual(self.db.execute("SELECT COUNT(*) FROM pos_payment_events").fetchone()[0],0)
   self.assertEqual(self.db.execute("SELECT status FROM pos_sales WHERE id=?",(SALE,)).fetchone()[0],"pending")
+ def test_completed_unreconciled_attempt_can_be_reconciled(self):
+  with self.db:
+   self.db.execute("UPDATE pos_square_sandbox_payment_attempts SET status='completed_unreconciled',provider_payment_id=? WHERE id='attempt-A'",(PAYMENT,))
+   self.receipt()
+   self.db.execute("UPDATE pos_sales SET status='completed' WHERE id=?",(SALE,))
+   self.db.execute("UPDATE pos_square_sandbox_payment_attempts SET status='reconciled' WHERE id='attempt-A'")
+  self.assertEqual(self.db.execute("SELECT status FROM pos_square_sandbox_payment_attempts WHERE id='attempt-A'").fetchone()[0],'reconciled')
+ def test_wrong_provider_id_cannot_reconcile_submitted_attempt(self):
+  self.db.execute("UPDATE pos_square_sandbox_payment_attempts SET status='completed_unreconciled',provider_payment_id=? WHERE id='attempt-A'",(PAYMENT,))
+  with self.assertRaises(sqlite3.IntegrityError):
+   self.receipt(payment='different-square-pay-111')
+ def test_submitted_state_cannot_be_reconciled_before_provider_response(self):
+  self.db.execute("UPDATE pos_square_sandbox_payment_attempts SET status='submitted' WHERE id='attempt-A'")
+  with self.assertRaises(sqlite3.IntegrityError):
+   self.receipt()
  def test_duplicate_event_denied(self):
   self.successful_reconcile()
   with self.assertRaises(sqlite3.IntegrityError):self.receipt()
