@@ -73,5 +73,6 @@ jobs:
           node --check api/square/sandbox-webhook.js
           node --check lib/nexus-square-submit-attempt.js
           node --check lib/nexus-square-verify-payment.js
+          node --check api/square/sandbox-reconcile.js
       - name: Run POS security and API tests
-        run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs tests/test_square_payment_transport.mjs tests/test_square_attempt.mjs tests/test_square_prepare_route.mjs tests/test_square_submit_attempt.mjs tests/test_square_verify_payment.mjs
+        run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs tests/test_square_payment_transport.mjs tests/test_square_attempt.mjs tests/test_square_prepare_route.mjs tests/test_square_submit_attempt.mjs tests/test_square_verify_payment.mjs tests/test_square_reconcile_route.mjs
