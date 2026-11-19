@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1424"><title>Nexus POS · Secure Development Pilot</title>
+<style>
+:root{color-scheme:dark;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0a1424;color:#f1f6fc}
+*{box-sizing:border-box}body{margin:0}header{padding:17px max(18px,calc((100% - 1080px)/2));background:#121f34;border-bottom:1px solid #31455b}
+header strong{font-size:1.3rem;letter-spacing:.08em;color:#b6ff76}header small{display:block;color:#b1c1d1}
+main{max-width:1080px;margin:0 auto;padding:20px 16px 56px}.notice{background:#302e26;border-left:4px solid #f4ca69;padding:12px 16px;margin:0 0 18px;border-radius:4px}
+.card{border:1px solid #365069;background:#15263b;border-radius:13px;padding:18px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:1.7rem}h2{font-size:1.14rem;margin:0 0 12px}h3{font-size:1rem;margin:12px 0 6px}
+label{display:block;font-size:.9rem;margin:0 0 12px;color:#d2dfeb}input,select,button{font:inherit;border-radius:8px}
+input,select{display:block;width:100%;padding:11px;margin-top:5px;background:#0c192b;color:#fff;border:1px solid #536b84}
+button{cursor:pointer;border:0;background:#b6ff76;color:#0a1829;padding:10px 14px;font-weight:700}
+button.secondary{background:#324a63;color:#f4f8fb}button:disabled{opacity:.43;cursor:not-allowed}
+small,.subtle{color:#c0cfdd}.ok{color:#b6ff76}.error{color:#ffadad}
+table{width:100%;border-collapse:collapse;min-width:450px}th,td{text-align:left;border-bottom:1px solid #365069;padding:9px 6px}td:last-child,th:last-child{text-align:right}.scroll{overflow:auto}
+#message{min-height:2em;white-space:pre-wrap}#message.error{color:#ffadad}
+.total{font-size:1.5rem;color:#b6ff76;font-weight:800}a{color:#b6ff76}
+@media print{header,.notice,#message,main>.subtle,#workspace>.grid,#workspace>.card.controls,#pendingWarning{display:none!important}#receiptPanel{display:block!important;border:0;background:white;color:black}#receiptPanel button{display:none!important}body{background:white;color:black}}
+@media(max-width:640px){main{padding:14px 10px 40px}header{padding:14px 10px}.card{padding:14px}.grid{grid-template-columns:1fr}}
+</style></head>
+<body><header><strong>NEXUS POS + CRM</strong><small>Secure Vercel pilot · development access only</small></header>
+<main>
+<p class="notice"><strong>Testing mode — no credit card charges.</strong> All recorded sales remain unpaid. Taxes and refunds are not yet processed. Use fictional customer and product information only.</p>
+<p id="message" role="status" aria-live="polite">Check your approved account credentials to begin.</p>
+<section id="loginScreen" class="card">
+<h1>Sign in to Nexus CRM</h1>
+<p class="subtle">Only invited company owners and administrators can use the secure pilot. Accounts must already exist in the development Supabase project.</p>
+<form id="loginForm"><label>Email<input id="email" name="email" type="email" autocomplete="username" required maxlength="254"></label>
+<label>Password<input id="password" name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+<button type="submit">Sign in</button></form>
+</section>
+<div id="workspace" hidden>
+<div class="card controls"><label style="flex:1;min-width:220px">Company<select id="companySelect" aria-label="Select company"></select></label>
+<button class="secondary" id="reload" type="button">Refresh</button>
+<button class="secondary" id="logout" type="button">Sign out</button></div>
+<div id="pendingWarning" class="card" hidden><strong>Checkout needs confirmation</strong>
+<p>Keep this receipt reference. A previous sale request may have succeeded despite a network failure. Retry the same request instead of making another sale.</p>
+<button id="retry" type="button">Retry the same sale</button></div>
+<div class="grid">
+<section class="card"><h2>Inventory</h2><div class="scroll"><table><thead><tr><th>Product</th><th>SKU</th><th>Price</th><th>Stock</th><th>Add</th></tr></thead><tbody id="products"></tbody></table></div></section>
+<section class="card"><h2>Checkout</h2><div class="scroll"><table><thead><tr><th>Item</th><th>Quantity</th><th>Amount</th><th>Remove</th></tr></thead><tbody id="cart"></tbody></table></div>
+<p class="subtle">Tax: not calculated</p><div class="total" id="total">$0.00</div>
+<div class="controls"><button id="record" type="button">Record unpaid sale</button><button id="clear" type="button" class="secondary">Clear cart</button></div></section>
+</div>
+<div class="grid">
+<section class="card"><h2>Add inventory item</h2><form id="productForm">
+<label>SKU<input name="sku" required maxlength="60" pattern="[-A-Za-z0-9_]+"></label>
+<label>Product name<input name="name" required maxlength="200"></label>
+<label>Price (USD)<input name="price" type="number" required min="0" max="1000000" step=".01"></label>
+<label>Opening stock<input name="stock" type="number" required min="0" max="1000000" step="1"></label>
+<button type="submit">Save item</button></form></section>
+<section class="card"><h2>Recorded sales</h2><p class="subtle">Receipts here are pending/unpaid. They are not settled payments.</p>
+<div class="scroll"><table><thead><tr><th>Receipt</th><th>Status</th><th>Amount</th><th>Details</th></tr></thead><tbody id="sales"></tbody></table></div></section>
+</div>
+<section class="card" id="receiptPanel" hidden><h2>Unpaid POS receipt</h2><div id="receiptDetails"></div><button type="button" class="secondary" id="printReceipt">Print receipt</button></section>
+</div>
+<p class="subtle">GitHub development branch preview only. Do not use for real transactions until payment, security and release reviews are complete.</p>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let token="",email="",companyId="",companies=[],products=[],sales=[],cart=new Map(),pending=null,busy=false;
+const fmt=c=>(Number(c)/100).toLocaleString("en-US",{style:"currency",currency:"USD"});
+function showMessage(value,error=false){$("message").textContent=value;$("message").className=error?"error":""}
+function cents(s){
+ const v=String(s).trim();
+ if(!/^\d+(?:\.\d{1,2})?$/.test(v))throw Error("Use a nonnegative amount with at most two decimal places");
+ const [whole,fraction=""]=v.split(".");
+ const n=Number(whole)*100+Number(fraction.padEnd(2,"0"));
+ if(!Number.isSafeInteger(n))throw Error("Amount exceeds the safe limit");
+ return n;
+}
+function storageKey(){return "nexus-pos-vercel-pending:"+email.toLowerCase()+":"+companyId;}
+function restorePending(){
+ try{const v=JSON.parse(sessionStorage.getItem(storageKey())||"null");
+ return v&&/^[A-Za-z0-9_-]{8,100}$/.test(v.idempotency_key)&&v.tax_cents===0&&Array.isArray(v.items)&&v.items.length>0?v:null}
+ catch{return null}
+}
+function savePending(items){
+ if(pending)return pending;
+ const v={items,tax_cents:0,idempotency_key:crypto.randomUUID().replace(/-/g,"")};
+ try{sessionStorage.setItem(storageKey(),JSON.stringify(v))}catch{throw Error("Browser session storage is unavailable; checkout was not sent")}
+ pending=v;return v;
+}
+function clearPending(){try{sessionStorage.removeItem(storageKey())}catch{}pending=null}
+async function api(path,method="GET",body=null,auth=true){
+ const headers={"Accept":"application/json"};
+ if(body!==null)headers["Content-Type"]="application/json";
+ if(auth){headers.Authorization="Bearer "+token;if(companyId)headers["X-Nexus-Company-Id"]=companyId}
+ let response;
+ try{response=await fetch(path,{method,headers,body:body===null?undefined:JSON.stringify(body),credentials:"same-origin",cache:"no-store"})}
+ catch{throw Error("Network connection failed")}
+ const data=await response.json().catch(()=>({error:"Unexpected server response"}));
+ if(!response.ok)throw Error(data.error||"Request failed: "+response.status);
+ return data;
+}
+function clearSession(){
+ token="";email="";companyId="";companies=[];products=[];sales=[];cart.clear();pending=null;
+ $("workspace").hidden=true;$("receiptPanel").hidden=true;$("loginScreen").hidden=false;$("password").value="";
+}
+function row(fields,button){
+ const tr=document.createElement("tr");
+ fields.forEach(value=>{const td=document.createElement("td");td.textContent=String(value??"");tr.append(td)});
+ if(button){const td=document.createElement("td");td.append(button);tr.append(td)}
+ return tr;
+}
+function render(){
+ $("products").replaceChildren();
+ for(const p of products){
+  const button=document.createElement("button");button.textContent="Add";button.disabled=busy||!!pending||p.stock_quantity<=(cart.get(p.id)||0);
+  button.addEventListener("click",()=>{cart.set(p.id,(cart.get(p.id)||0)+1);render()});
+  $("products").append(row([p.name,p.sku,fmt(p.price_cents),p.stock_quantity],button));
+ }
+ $("cart").replaceChildren();
+ let total=0;
+ for(const [id,quantity] of cart){
+  const p=products.find(x=>x.id===id);if(!p)continue;
+  total+=p.price_cents*quantity;
+  const button=document.createElement("button");button.textContent="−1";button.className="secondary";button.disabled=busy||!!pending;
+  button.addEventListener("click",()=>{quantity===1?cart.delete(id):cart.set(id,quantity-1);render()});
+  $("cart").append(row([p.name,quantity,fmt(p.price_cents*quantity)],button));
+ }
+ $("total").textContent=fmt(total);
+ $("pendingWarning").hidden=!pending;
+ $("retry").disabled=busy;
+ $("record").disabled=busy||!!pending||!total;
+ $("clear").disabled=busy||!!pending;
+ $("reload").disabled=busy;
+ $("productForm").querySelector("button").disabled=busy||!!pending;
+ $("sales").replaceChildren();
+ for(const x of sales){
+  const button=document.createElement("button");button.textContent="View";button.className="secondary";button.disabled=busy;
+  button.addEventListener("click",()=>work(()=>viewReceipt(x.id)));
+  $("sales").append(row([String(x.id).slice(0,8),x.status==="pending"?"Pending / unpaid":x.status,fmt(x.total_cents)],button));
+ }
+}
+async function refresh(){
+ if(!companyId)return;
+ const [p,s]=await Promise.all([api("/api/pos/products"),api("/api/pos/sales")]);
+ products=p.items||[];sales=s.items||[];
+ render();
+}
+async function work(action){
+ if(busy)return;
+ busy=true;render();
+ try{await action()}catch(e){showMessage(e.message,true)}
+ finally{busy=false;render()}
+}
+async function selectCompany(){
+ $("receiptPanel").hidden=true;
+ companyId=$("companySelect").value;
+ cart.clear();pending=restorePending();products=[];sales=[];render();
+ await refresh();
+ showMessage(pending?"Previous checkout is awaiting confirmation. Retry using the saved reference.":"Connected to "+$("companySelect").selectedOptions[0].text+". Unpaid-sale pilot.");
+}
+$("loginForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ await work(async()=>{
+  const f=e.target,enteredEmail=f.elements.email.value.trim().toLowerCase();
+  const auth=await api("/api/pos/login","POST",{email:enteredEmail,password:f.elements.password.value},false);
+  token=auth.access_token;email=enteredEmail;f.elements.password.value="";
+  const list=await api("/api/pos/companies");
+  companies=list.items||[];
+  if(!companies.length){clearSession();throw Error("Your account has no approved owner/admin company membership")}
+  $("companySelect").replaceChildren(...companies.map(x=>new Option(x.name,x.id)));
+  $("loginScreen").hidden=true;$("workspace").hidden=false;
+  await selectCompany();
+ });
+});
+$("companySelect").addEventListener("change",()=>work(selectCompany));
+$("reload").addEventListener("click",()=>work(refresh));
+$("logout").addEventListener("click",()=>{clearSession();showMessage("Signed out. Any unresolved checkout remains saved for your next approved sign-in.")});
+$("clear").addEventListener("click",()=>{if(pending)return;cart.clear();render()});
+$("productForm").addEventListener("submit",e=>{
+ e.preventDefault();
+ work(async()=>{
+  if(pending)throw Error("Confirm the pending checkout before changing inventory");
+  const f=new FormData(e.target);
+  const stock=Number(f.get("stock")),price_cents=cents(f.get("price"));
+  if(!Number.isSafeInteger(stock)||stock<0||stock>1000000)throw Error("Invalid stock");
+  await api("/api/pos/products","POST",{sku:f.get("sku"),name:f.get("name"),price_cents,stock_quantity:stock});
+  e.target.reset();await refresh();showMessage("Inventory item saved to your selected company");
+ });
+});
+async function viewReceipt(id){
+ const details=await api("/api/pos/receipts?sale_id="+encodeURIComponent(id));
+ const area=$("receiptDetails");area.replaceChildren();
+ const addLine=(title,value)=>{
+  const p=document.createElement("p");p.textContent=title+": "+String(value);area.append(p);
+ };
+ addLine("Receipt reference",details.sale.id);
+ addLine("Payment status","PENDING / UNPAID — NO PAYMENT COLLECTED");
+ addLine("Company",$("companySelect").selectedOptions[0].text);
+ for(const item of details.items){
+  addLine(item.product_name, String(item.quantity)+" × "+fmt(item.unit_price_cents)+" = "+fmt(item.line_total_cents));
+ }
+ addLine("Subtotal",fmt(details.sale.subtotal_cents));
+ addLine("Tax","Not calculated");
+ addLine("Unpaid total",fmt(details.sale.total_cents));
+ $("receiptPanel").hidden=false;
+ $("receiptPanel").scrollIntoView({behavior:"smooth",block:"start"});
+}
+$("printReceipt").addEventListener("click",()=>window.print());
+async function record(){
+ const items=[...cart].filter(([,q])=>q>0).map(([product_id,quantity])=>({product_id,quantity}));
+ if(!pending&&!items.length)return;
+ let attempt;
+ try{attempt=pending||savePending(items)}
+ catch(e){showMessage("Checkout was not sent: "+e.message,true);return}
+ let result;
+ try{
+  result=await api("/api/pos/sales","POST",attempt);
+  if(!result?.id)throw Error("Receipt confirmation missing");
+ }catch(e){
+  showMessage("Checkout not confirmed: "+e.message+". Retry the same saved sale reference; do not start another checkout.",true);
+  return;
+ }
+ // The write is confirmed: never present a later read failure as a failed checkout.
+ clearPending();cart.clear();
+ showMessage("Recorded sale "+String(result.id).slice(0,8)+" — pending/unpaid. No payment charged.");
+ try{await refresh()}
+ catch(e){showMessage("Sale "+String(result.id).slice(0,8)+" was recorded successfully, but the product/sales list could not refresh: "+e.message+". Refresh the list; do not repeat checkout.",true)}
+}
+$("record").addEventListener("click",()=>work(record));
+$("retry").addEventListener("click",()=>work(record));
+</script></body></html>
