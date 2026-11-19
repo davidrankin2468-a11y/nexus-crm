@@ -3,12 +3,16 @@ on:
   push:
     paths:
       - 'cloudflare/square-sandbox-connectivity.js'
+      - 'cloudflare/migrations/**'
       - 'tests/cloudflare-square-connectivity.test.mjs'
+      - 'tests/test_cloudflare_square_d1.py'
       - '.github/workflows/cloudflare-square-checks.yml'
   pull_request:
     paths:
       - 'cloudflare/square-sandbox-connectivity.js'
+      - 'cloudflare/migrations/**'
       - 'tests/cloudflare-square-connectivity.test.mjs'
+      - 'tests/test_cloudflare_square_d1.py'
       - '.github/workflows/cloudflare-square-checks.yml'
 permissions:
   contents: read
@@ -23,3 +27,4 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tests/cloudflare-square-connectivity.test.mjs
+      - run: python3 -m unittest discover -s tests -p 'test_cloudflare_square_d1.py' -v
