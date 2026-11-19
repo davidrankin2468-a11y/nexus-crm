@@ -11,7 +11,7 @@ test('rejects incomplete sandbox settings without provider call',async()=>{
 });
 test('verifies matching sandbox location and merchant without payment',async()=>{
  const res=await squareSandboxConnectivity({request,env,fetchImpl:async(url,opts)=>{
-  assert.match(url,/squareupsandbox/);assert.match(opts.headers.Authorization,/Bearer test-token/);
+  assert.match(url,/squareupsandbox/);assert.match(opts.headers.Authorization,/Bearer test-token/);assert.equal(opts.redirect,"manual");
   return new Response(JSON.stringify({locations:[{id:'LOC1',merchant_id:'MERCHANT1'}]}),{status:200});
  }});
  assert.equal(res.status,200);assert.deepEqual(await res.json(),{connected:true,environment:'sandbox',locationVerified:true,merchantVerified:true,paymentProcessing:false});
@@ -23,4 +23,16 @@ test('rejects merchant mismatch',async()=>{
 test('rejects provider errors without exposing credentials',async()=>{
  const res=await squareSandboxConnectivity({request,env,fetchImpl:async()=>new Response('invalid token',{status:401})});
  assert.equal(res.status,502);const body=await res.text();assert.equal(JSON.parse(body).providerStatus,401);assert.doesNotMatch(body,/test-token/);
+});
+
+test('refuses Square redirects without following them',async()=>{
+ let calls=0;
+ const res=await squareSandboxConnectivity({request,env,fetchImpl:async(url,opts)=>{
+  calls+=1;
+  assert.equal(opts.redirect,'manual');
+  return new Response(null,{status:302,headers:{Location:'https://example.invalid/redirect'}});
+ }});
+ assert.equal(calls,1);
+ assert.equal(res.status,502);
+ assert.deepEqual(await res.json(),{connected:false,reason:'SQUARE_REDIRECT_BLOCKED',providerStatus:302,paymentProcessing:false});
 });
