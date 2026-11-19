@@ -7,9 +7,10 @@ export async function squareSandboxConnectivity({request,env,fetchImpl=fetch}){
   return json({connected:false,reason:"SANDBOX_NOT_CONFIGURED",paymentProcessing:false},503);
  try{
   const response=await fetchImpl("https://connect.squareupsandbox.com/v2/locations",{
-   method:"GET",redirect:"error",signal:AbortSignal.timeout(12000),
+   method:"GET",redirect:"manual",signal:AbortSignal.timeout(12000),
    headers:{"Authorization":"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Accept":"application/json"}
   });
+  if(response.status>=300&&response.status<400)return json({connected:false,reason:"SQUARE_REDIRECT_BLOCKED",providerStatus:response.status,paymentProcessing:false},502);
   if(!response.ok)return json({connected:false,reason:"SQUARE_PROVIDER_REJECTED",providerStatus:response.status,paymentProcessing:false},502);
   const payload=await response.json().catch(()=>null);
   const location=Array.isArray(payload?.locations)&&payload.locations.find(x=>x?.id===env.SQUARE_SANDBOX_LOCATION_ID);
