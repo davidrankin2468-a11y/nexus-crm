@@ -20,7 +20,7 @@ async function handle_companies(req,res){
     .map(x=>({id:x.id,name:x.name,role:membershipsById.get(x.id)}))
     .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   return respond(res,200,{items});
- }catch{return respond(res,503,{error:"Company list currently unavailable"})}
+ }catch(err){console.error("POS company lookup failed",{status:Number.isInteger(err?.status)?err.status:null,kind:err?.name==="TimeoutError"?"timeout":"upstream"});return respond(res,503,{error:"Company list currently unavailable"})}
 }
 
 
