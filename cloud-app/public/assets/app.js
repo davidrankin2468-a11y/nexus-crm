@@ -218,7 +218,7 @@ async function posCommit(){
   const receipt=await request("/api/pos/sales","POST",attempt);
   if(!receipt?.id)throw Error("Sale response did not contain a receipt reference");
   posPendingFinish();s.posCart={};s.posCustomerId="";await loadPos();
-  notice("Sale "+receipt.id+" recorded as pending/unpaid. No card was charged.");
+  notice("Sale "+receipt.id+" recorded as pending/unpaid. No card was charged."+(s.posError?" Records could not refresh; select Refresh to retry.":""));
  }catch(err){
   notice("Sale outcome not yet confirmed: "+err.message+". Retry the same pending sale to avoid a duplicate.");
  }finally{s.posBusy=false;draw()}
@@ -1079,7 +1079,13 @@ document.addEventListener("submit",async e=>{
    data.amount=Number(data.amount);
    const url=s.editingJob?"/api/jobs/"+encodeURIComponent(s.editingJob):"/api/jobs";
    await request(url,s.editingJob?"PATCH":"POST",data);s.editingJob=null;
-   await refresh();notice("Job saved to your private cloud database.");return;
+   // F1: only refresh the affected jobs and dashboard, not unrelated management resources.
+   // F2: a confirmed write cannot be reported as a failed save due to a read failure.
+   const results=await Promise.allSettled([request("/api/jobs"),request("/api/dashboard")]);
+   if(results[0].status==="fulfilled")s.jobs=results[0].value.items;
+   if(results[1].status==="fulfilled")s.dashboard=results[1].value;
+   draw();
+   notice(results.every(x=>x.status==="fulfilled")?"Job saved to your private cloud database.":"Job saved successfully. Some records could not refresh; select Refresh to retry.");return;
   }
  }catch(err){notice(err.message)}finally{if(btn)btn.disabled=false}
 });
