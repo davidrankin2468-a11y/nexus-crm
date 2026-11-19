@@ -1,0 +1,25 @@
+name: Cloudflare Square Sandbox checks
+on:
+  push:
+    paths:
+      - 'cloudflare/square-sandbox-connectivity.js'
+      - 'tests/cloudflare-square-connectivity.test.mjs'
+      - '.github/workflows/cloudflare-square-checks.yml'
+  pull_request:
+    paths:
+      - 'cloudflare/square-sandbox-connectivity.js'
+      - 'tests/cloudflare-square-connectivity.test.mjs'
+      - '.github/workflows/cloudflare-square-checks.yml'
+permissions:
+  contents: read
+jobs:
+  square-cloudflare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/cloudflare-square-connectivity.test.mjs
