@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {inspectSandboxRefund,verifySandboxRefund} from '../cloudflare/square-sandbox-refund-verification.js';
+import {readFile} from 'node:fs/promises';
+const code=await readFile(new URL('../cloudflare/square-sandbox-refund-verification.js',import.meta.url),'utf8');
+const {inspectSandboxRefund,verifySandboxRefund}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 const env={SQUARE_ENVIRONMENT:'sandbox',SQUARE_SANDBOX_ACCESS_TOKEN:'test-token',SQUARE_SANDBOX_LOCATION_ID:'LOC123'};
 const paymentId='pay_12345678',refundId='refund_12345678';
 const refund={id:refundId,payment_id:paymentId,status:'COMPLETED',amount_money:{amount:100,currency:'USD'},location_id:'LOC123'};
