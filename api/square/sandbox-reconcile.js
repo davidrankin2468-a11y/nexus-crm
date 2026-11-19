@@ -1,11 +1,12 @@
 // Square sandbox only. Requires authenticated company owner/admin and a
 // fresh provider-side verification before a service-role-only atomic DB RPC.
-import {actor,respond,allow,database} from "../../lib/nexus-pos-server.js";
+import {actor,respond,allow,database,checkWrite} from "../../lib/nexus-pos-server.js";
 import {verifySquareSandboxPayment} from "../../lib/nexus-square-verify-payment.js";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export default async function handler(req,res){
  if(!allow(req,res,["POST"]))return;
  const a=await actor(req,res);if(!a)return;
+ if(!checkWrite(req,res))return;
  if(process.env.SQUARE_ENVIRONMENT!=="sandbox")return respond(res,503,{error:"Sandbox disabled"});
  const id=req.body?.attempt_id;
  if(typeof id!=="string"||!uuid.test(id))return respond(res,400,{error:"Invalid attempt ID"});
@@ -14,7 +15,7 @@ export default async function handler(req,res){
   const attempts=await database("/rest/v1/nexus_square_sandbox_payment_attempts?"+q);
   if(!Array.isArray(attempts)||attempts.length!==1)return respond(res,404,{error:"Attempt not found"});
   const attempt=attempts[0];
-  if(!["completed_unreconciled","reconciled"].includes(attempt.status)||!attempt.provider_payment_id)
+  if(!["completed_unreconciled","reconciled"].includes(attempt.status)||attempt.currency!=="USD"||!attempt.provider_payment_id)
    return respond(res,409,{error:"Attempt not eligible for reconciliation"});
   const verification=await verifySquareSandboxPayment({paymentId:attempt.provider_payment_id,attempt});
   if(!verification.verified)return respond(res,409,{error:"Provider payment not verified",reason:verification.reason});
