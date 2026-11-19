@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0a1424"><title>Nexus POS · Secure Development Pilot</title>
+<link rel="stylesheet" href="/assets/styles.css?v=3.4.1-pos-integrated">
 <style>
 :root{color-scheme:dark;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0a1424;color:#f1f6fc}
 *{box-sizing:border-box}body{margin:0}header{padding:17px max(18px,calc((100% - 1080px)/2));background:#121f34;border-bottom:1px solid #31455b}
@@ -19,8 +20,21 @@ table{width:100%;border-collapse:collapse;min-width:450px}th,td{text-align:left;
 .total{font-size:1.5rem;color:#b6ff76;font-weight:800}a{color:#b6ff76}
 @media print{header,.notice,#message,main>.subtle,#workspace>.grid,#workspace>.card.controls,#pendingWarning{display:none!important}#receiptPanel{display:block!important;border:0;background:white;color:black}#receiptPanel button{display:none!important}body{background:white;color:black}}
 @media(max-width:640px){main{padding:14px 10px 40px}header{padding:14px 10px}.card{padding:14px}.grid{grid-template-columns:1fr}}
+:root{--bg:#081421;--card:#13283a;--side:#101f2c;--border:#314b5a;--green:#adf68b;--text:#f2f8fa;--muted:#a4b8c6}
+body{background:var(--bg);color:var(--text);font-family:Segoe UI,system-ui,Arial,sans-serif}
+header.masthead{padding:18px 28px;background:#0e202f;border-bottom:1px solid var(--border);max-width:none;display:flex;justify-content:space-between;align-items:center}
+header .logo{font-size:22px;font-weight:900;letter-spacing:.3px;color:var(--text)}header .logo span{color:var(--green)}
+header .head-right{display:flex;gap:20px;align-items:center}header .head-right a{font-size:13px;color:var(--green)}
+main{max-width:1200px;padding:28px clamp(16px,4vw,48px) 56px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:22px}
+button{border:1px solid var(--border);background:var(--green);color:#0b2415;border-radius:9px;padding:10px 16px;font-weight:800}
+button.secondary{background:#2b4554;color:var(--text)}
+input,select{background:#0b1928;border:1px solid #416072;color:var(--text);border-radius:9px}
+input:focus,select:focus{outline:2px solid var(--green);outline-offset:1px}
+.total,.ok{color:var(--green)}a{color:var(--green)}
+@media(max-width:640px){header.masthead{padding:14px 16px;flex-wrap:wrap}main{padding:16px}}
 </style></head>
-<body><header><strong>NEXUS POS + CRM</strong><small>Secure Vercel pilot · development access only</small></header>
+<body><header class="masthead"><div class="logo">◈ NEXUS <span>CRM</span></div><div class="head-right"><span id="environment">POS · SECURE PILOT</span><a href="/" aria-label="Return to CRM dashboard">CRM Dashboard</a></div></header>
 <main>
 <p class="notice"><strong>Testing mode — no credit card charges.</strong> All recorded sales remain unpaid. Taxes and refunds are not yet processed. Use fictional customer and product information only.</p>
 <p id="message" role="status" aria-live="polite">Check your approved account credentials to begin.</p>
