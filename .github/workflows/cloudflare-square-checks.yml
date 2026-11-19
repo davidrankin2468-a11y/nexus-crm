@@ -1,5 +1,6 @@
 name: Cloudflare Square Sandbox checks
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'cloudflare/square-sandbox-connectivity.js'
