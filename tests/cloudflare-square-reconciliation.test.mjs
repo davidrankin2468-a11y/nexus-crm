@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
 const code=await readFile(new URL('../cloudflare/square-d1-reconciliation.js',import.meta.url),'utf8');
-const {inspectSquarePayment,verifyCompletedSquareSandboxPayment,handleSquareSandboxAttempt}=
+const {inspectSquarePayment,verifyCompletedSquareSandboxPayment,submitSandboxFakePayment,handleSquareSandboxAttempt}=
  await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 
 const env={SQUARE_ENVIRONMENT:'sandbox',SQUARE_SANDBOX_ACCESS_TOKEN:'fake-sandbox-token',
@@ -91,4 +91,29 @@ test('sandbox preparation does not contact provider and returns existing idempot
  assert.equal(body.duplicate,true);assert.equal(body.payment_charged,false);
  assert.equal(calls.length,2);
  assert.deepEqual(calls[0].args,['tenant-A',saleId]);
+});
+
+test('fake Sandbox submission never uses real cards, client totals or production URL',async()=>{
+ let body;const attemptWithKey={...attempt,idempotency_key:'safe-key-123456'};
+ const res=await submitSandboxFakePayment({attempt:attemptWithKey,env,fetchImpl:async(url,opts)=>{
+  assert.equal(url,'https://connect.squareupsandbox.com/v2/payments');
+  assert.equal(opts.method,'POST');assert.equal(opts.redirect,'manual');
+  body=JSON.parse(opts.body);
+  return new Response(JSON.stringify({payment}),{status:200});
+ }});
+ assert.equal(res.submitted,true);assert.equal(res.paymentId,paymentId);
+ assert.deepEqual(body,{source_id:'cnon:card-nonce-ok',idempotency_key:'safe-key-123456',
+  amount_money:{amount:1250,currency:'USD'},location_id:'LOC_1234',reference_id:saleId,autocomplete:true});
+});
+test('fake Sandbox submission is blocked without Sandbox mode',async()=>{
+ let calls=0;
+ const res=await submitSandboxFakePayment({attempt:{...attempt,idempotency_key:'safe-key-123456'},env:{...env,SQUARE_ENVIRONMENT:'production'},fetchImpl:async()=>{calls++}});
+ assert.equal(calls,0);assert.equal(res.reason,'SANDBOX_NOT_CONFIGURED');
+});
+test('submission requires exact confirmation before touching D1',async()=>{
+ let touched=false;
+ const res=await handleSquareSandboxAttempt({path:'/api/pos/square/sandbox-submit',method:'POST',
+  body:{attempt_id:saleId,confirm:'no'},tenant:'tenant-A',env,
+  db:{prepare:()=>{touched=true;throw Error('should not run')}}});
+ assert.equal(res.status,400);assert.equal(touched,false);
 });
