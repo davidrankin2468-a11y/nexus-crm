@@ -22,5 +22,5 @@ test('rejects merchant mismatch',async()=>{
 });
 test('rejects provider errors without exposing credentials',async()=>{
  const res=await squareSandboxConnectivity({request,env,fetchImpl:async()=>new Response('invalid token',{status:401})});
- assert.equal(res.status,502);assert.equal((await res.json()).providerStatus,401);assert.doesNotMatch(await res.text().catch(()=>''),/test-token/);
+ assert.equal(res.status,502);const body=await res.text();assert.equal(JSON.parse(body).providerStatus,401);assert.doesNotMatch(body,/test-token/);
 });
