@@ -6,6 +6,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]/"cloudflare"/"migrations"
 V1=(ROOT/"0001_square_sandbox_attempts.sql").read_text()
 V2=(ROOT/"0002_square_sandbox_reconciliation.sql").read_text()
 V3=(ROOT/"0003_square_sandbox_submission_reconcile.sql").read_text()
+V4=(ROOT/"0004_square_sandbox_inflight_sale_guards.sql").read_text()
 SALE="f341ff51-0adb-487f-8ac0-b0f9a58945fd"
 SALE_B="9b843782-2931-4337-a9b5-130510279f64"
 PAYMENT="sq-test-payment-123456789"
@@ -36,6 +37,7 @@ class ReconcileTransactionTests(unittest.TestCase):
   self.db.executescript(V1)
   self.db.executescript(V2)
   self.db.executescript(V3)
+  self.db.executescript(V4)
   self.db.execute("""INSERT INTO pos_square_sandbox_payment_attempts
     (id,tenant_id,sale_id,idempotency_key,square_location_id,amount_cents,currency,status,created_at,updated_at)
     VALUES ('attempt-A','A',?,'idem-key-A','SQUARE_LOC',1250,'USD','prepared',100,100)""",(SALE,))
@@ -100,6 +102,15 @@ class ReconcileTransactionTests(unittest.TestCase):
  def test_provider_id_cannot_be_reused(self):
   self.successful_reconcile()
   with self.assertRaises(sqlite3.IntegrityError):self.receipt(tenant='B',sale=SALE_B)
+ def test_inflight_sale_cannot_be_voided(self):
+  for state in ('submitted','unknown','completed_unreconciled'):
+   with self.subTest(state=state):
+    self.db.execute("UPDATE pos_square_sandbox_payment_attempts SET status=? WHERE id='attempt-A'",(state,))
+    with self.assertRaises(sqlite3.IntegrityError):
+     self.db.execute("UPDATE pos_sales SET status='voided' WHERE id=?",(SALE,))
+ def test_unverified_square_sale_cannot_be_completed(self):
+  with self.assertRaises(sqlite3.IntegrityError):
+   self.db.execute("UPDATE pos_sales SET status='completed' WHERE id=?",(SALE,))
  def test_receipts_append_only(self):
   self.successful_reconcile()
   with self.assertRaises(sqlite3.IntegrityError):
