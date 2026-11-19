@@ -10,7 +10,7 @@ const envKeys=["SUPABASE_URL","SUPABASE_PUBLISHABLE_KEY","SUPABASE_SERVICE_ROLE_
 const saved=Object.fromEntries(envKeys.map(k=>[k,process.env[k]]));
 Object.assign(process.env,{SUPABASE_URL:"https://fake.supabase.invalid",SUPABASE_PUBLISHABLE_KEY:"sb_publishable_test",SUPABASE_SERVICE_ROLE_KEY:"sb_secret_test",SQUARE_ENVIRONMENT:"sandbox",SQUARE_SANDBOX_ACCESS_TOKEN:"fake_token",SQUARE_SANDBOX_LOCATION_ID:"LOC_TEST_1234",SQUARE_SANDBOX_MERCHANT_ID:"MERCHANT_TEST"});
 const originalFetch=globalThis.fetch;
-let membership="owner",providerStatus="COMPLETED",providerMerchant="MERCHANT_TEST",rpcFails=false,dbCalls=[],providerCalls=0;
+let membership="owner",providerStatus="COMPLETED",providerMerchant="MERCHANT_TEST",providerAmount=1499,providerLocation="LOC_TEST_1234",providerReference=saleId,rpcFails=false,dbCalls=[],providerCalls=0;
 globalThis.fetch=async(url,options)=>{
  const u=new URL(url);const body=options.body?JSON.parse(options.body):null;
  dbCalls.push({path:u.pathname,query:u.searchParams,body});
@@ -22,7 +22,7 @@ globalThis.fetch=async(url,options)=>{
   value=[{id:attemptId,company_id:company,sale_id:saleId,amount_cents:1499,currency:"USD",square_location_id:"LOC_TEST_1234",provider_payment_id:paymentId,status:"completed_unreconciled"}];
  }else if(u.pathname==="/v2/payments/"+paymentId){
   providerCalls++;
-  value={payment:{id:paymentId,status:providerStatus,amount_money:{amount:1499,currency:"USD"},location_id:"LOC_TEST_1234",merchant_id:providerMerchant,reference_id:saleId}};
+  value={payment:{id:paymentId,status:providerStatus,amount_money:{amount:providerAmount,currency:"USD"},location_id:providerLocation,merchant_id:providerMerchant,reference_id:providerReference}};
  }else if(u.pathname==="/rest/v1/rpc/nexus_reconcile_square_sandbox_payment"){
   assert.deepEqual(body,{p_company_id:company,p_attempt_id:attemptId,p_payment_id:paymentId});
   if(rpcFails)return {ok:false,status:503,json:async()=>({error:"unavailable"})};
@@ -41,6 +41,9 @@ test("disabled sandbox never calls Square",async()=>{const old=process.env.SQUAR
 test("invalid attempt rejected before provider call",async()=>{providerCalls=0;const r=res();await handler(req("POST",{attempt_id:"bad"}),r);assert.equal(r.statusCode,400);assert.equal(providerCalls,0)});
 test("incomplete provider payment rejected without RPC",async()=>{dbCalls=[];providerStatus="PENDING";const r=res();await handler(req(),r);assert.equal(r.statusCode,409);assert.equal(dbCalls.some(x=>x.path.endsWith("/nexus_reconcile_square_sandbox_payment")),false);providerStatus="COMPLETED"});
 test("wrong Square merchant cannot reconcile a sale",async()=>{dbCalls=[];providerMerchant="OTHER_MERCHANT";try{const r=res();await handler(req(),r);assert.equal(r.statusCode,409);assert.equal(dbCalls.some(x=>x.path.endsWith("/nexus_reconcile_square_sandbox_payment")),false)}finally{providerMerchant="MERCHANT_TEST"}});
+test("wrong Square amount cannot reconcile a sale",async()=>{dbCalls=[];providerAmount=1500;try{const r=res();await handler(req(),r);assert.equal(r.statusCode,409);assert.equal(dbCalls.some(x=>x.path.endsWith("/nexus_reconcile_square_sandbox_payment")),false)}finally{providerAmount=1499}});
+test("wrong Square location cannot reconcile a sale",async()=>{dbCalls=[];providerLocation="OTHER_LOCATION";try{const r=res();await handler(req(),r);assert.equal(r.statusCode,409);assert.equal(dbCalls.some(x=>x.path.endsWith("/nexus_reconcile_square_sandbox_payment")),false)}finally{providerLocation="LOC_TEST_1234"}});
+test("wrong Square sale reference cannot reconcile a sale",async()=>{dbCalls=[];providerReference="OTHER_SALE";try{const r=res();await handler(req(),r);assert.equal(r.statusCode,409);assert.equal(dbCalls.some(x=>x.path.endsWith("/nexus_reconcile_square_sandbox_payment")),false)}finally{providerReference=saleId}});
 test("database outage never reports a paid sale",async()=>{rpcFails=true;try{const r=res();await handler(req(),r);assert.equal(r.statusCode,503);assert.equal(r.body.payment_verified,undefined);assert.match(r.body.error,/reconciliation unavailable/i)}finally{rpcFails=false}});
 test("verified sandbox payment reconciles only selected tenant sale",async()=>{dbCalls=[];const r=res();await handler(req(),r);assert.equal(r.statusCode,200);assert.equal(r.body.payment_verified,true);assert.equal(r.body.environment,"sandbox");assert.equal(dbCalls.filter(x=>x.path.endsWith("/nexus_reconcile_square_sandbox_payment")).length,1)});
 test.after(()=>{globalThis.fetch=originalFetch;for(const k of envKeys){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k]}});
