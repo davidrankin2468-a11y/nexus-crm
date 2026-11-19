@@ -5,9 +5,11 @@ on:
     paths:
       - 'cloudflare/square-sandbox-connectivity.js'
       - 'cloudflare/square-d1-reconciliation.js'
+      - 'cloudflare/square-sandbox-refund-verification.js'
       - 'cloudflare/migrations/**'
       - 'tests/cloudflare-square-connectivity.test.mjs'
       - 'tests/cloudflare-square-reconciliation.test.mjs'
+      - 'tests/cloudflare-square-refund-verification.test.mjs'
       - 'tests/test_cloudflare_square_d1.py'
       - 'tests/test_cloudflare_square_reconciliation_d1.py'
       - '.github/workflows/cloudflare-square-checks.yml'
@@ -15,9 +17,11 @@ on:
     paths:
       - 'cloudflare/square-sandbox-connectivity.js'
       - 'cloudflare/square-d1-reconciliation.js'
+      - 'cloudflare/square-sandbox-refund-verification.js'
       - 'cloudflare/migrations/**'
       - 'tests/cloudflare-square-connectivity.test.mjs'
       - 'tests/cloudflare-square-reconciliation.test.mjs'
+      - 'tests/cloudflare-square-refund-verification.test.mjs'
       - 'tests/test_cloudflare_square_d1.py'
       - 'tests/test_cloudflare_square_reconciliation_d1.py'
       - '.github/workflows/cloudflare-square-checks.yml'
@@ -33,5 +37,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test tests/cloudflare-square-connectivity.test.mjs tests/cloudflare-square-reconciliation.test.mjs
+      - run: node --test tests/cloudflare-square-connectivity.test.mjs tests/cloudflare-square-reconciliation.test.mjs tests/cloudflare-square-refund-verification.test.mjs
       - run: python3 -m unittest discover -s tests -p 'test_cloudflare_square*.py' -v
