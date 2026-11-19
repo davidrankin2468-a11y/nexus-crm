@@ -76,3 +76,11 @@
 - Development Supabase rollback-only SQL checks confirmed pending attempts cannot be reconciled and that a payment attempt cannot reference another company's sale. Anonymous and authenticated database roles cannot issue/change licenses or forge/reconcile payment attempts.
 - Vercel Hobby deployment failed with `exceeded_serverless_functions_per_deployment` (limit 12). The successful older deployment is not evidence that the new reconciliation API is live. Cloudflare remains the primary staging target; no paid-plan upgrade was authorized.
 - Do not activate live payments, merge into main, or advertise commercial readiness until end-to-end sandbox provider, webhook, refunds, authentication, tenant isolation, and deployment checks pass.
+
+## Continued staging audit
+
+- Square Sandbox Merchant ID confirmed configured on Vercel Preview for the feature branch; no credential value inspected.
+- Cloudflare Worker `nexus-crm-pos-integrated-preview` currently has only a D1 `DB` binding. **No Square or Supabase secret bindings** were present during inspection. This is a real Cloudflare backend integration blocker, not a reason to enable production payments.
+- Additional mocked reconciliation regression cases committed for wrong provider amount, wrong location, and wrong sale reference. **CI execution not confirmed**; these are not recorded as passed tests.
+- The GitHub PR remains draft and the Vercel Hobby plan's 12-function limit blocks the expanded Vercel backend. No paid upgrade or production changes authorized.
+- Next engineering work: implement a Cloudflare-native authenticated provider verification route with secret bindings, run isolated end-to-end staging checks, then verify Square webhooks and refund handling. Never move secrets through GitHub source or chat.
