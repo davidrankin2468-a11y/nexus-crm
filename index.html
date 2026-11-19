@@ -210,7 +210,9 @@ function load(){
 }
 let db=load(),mainTab="Dashboard",subTab="Overview",edit=null,customerSearch="",jobFilter="";
 let lastSavedSnapshot=JSON.stringify(db);
-function persist(){try{const snapshot=JSON.stringify(db);localStorage.setItem(STORAGE,snapshot);lastSavedSnapshot=snapshot;return true}catch(e){alert("Changes were not saved. Browser storage is unavailable or full. The last saved records will be restored.");return false}}
+const qaMode=new URLSearchParams(location.search).get("qa")==="f2";
+let qaFailNextSave=false;
+function persist(){try{if(qaFailNextSave){qaFailNextSave=false;throw new DOMException("Simulated storage failure","QuotaExceededError")}const snapshot=JSON.stringify(db);localStorage.setItem(STORAGE,snapshot);lastSavedSnapshot=snapshot;return true}catch(e){alert("Changes were not saved. Browser storage is unavailable or full. The last saved records will be restored.");return false}}
 function logActivity(txt){db.activity.unshift({at:new Date().toISOString(),text:String(txt).slice(0,240)});db.activity=db.activity.slice(0,80)}
 function customer(cid){return db.customers.find(x=>String(x.id)===String(cid))}
 function employee(eid){return db.employees.find(x=>String(x.id)===String(eid))}
@@ -351,6 +353,7 @@ function showManagement(){
  return panel("Licensing and updates",'<p>The demo does not enforce a paid license. Future commercial licensing requires server-verified entitlements, signed license records, billing and renewal handling, and an offline activation policy.</p><p>Deployment updates are versioned in GitHub and published through Cloudflare Pages.</p>');
 }
 function showPOS(){return '<div class="panel"><h2>Nexus POS · Checkout, Inventory, Customers &amp; Reports</h2><p class="note">Interactive development preview: fictional items and browser-only records. No real payments, tax filing, or multi-company synchronization. Your other CRM tabs remain unchanged.</p><iframe title="Nexus POS interactive demo" src="/pos-demo/index.html" loading="lazy" style="display:block;width:100%;min-height:900px;border:1px solid #36516a;border-radius:10px;background:#0b1425" referrerpolicy="no-referrer"></iframe><p class="muted">If the embedded demo does not load, <a href="/pos-demo/index.html" target="_blank" rel="noopener">open Nexus POS directly</a>.</p></div>';}
+function qaPanel(){return qaMode?'<div class="panel"><h2>F2 · Safe failed-save test</h2><p>Arm one simulated browser-storage failure, then edit a fictional job and click Save Job. The app should report failure and restore previous data. No records are deleted.</p><button class="secondary" data-action="qa-arm-failure" type="button">Simulate next save failure</button><p class="muted">'+(qaFailNextSave?"Armed: next save fails once.":"Not armed.")+'</p></div>':""}
 function render(){
  $('nav').innerHTML=Object.keys(TABS).map(t=>'<button class="nav'+(mainTab===t?" active":"")+'" data-main="'+t+'" aria-current="'+(mainTab===t?"page":"false")+'">'+t+'</button>').join("");
  $('heading').textContent=mainTab;$('intro').textContent=DESCRIPTIONS[mainTab];
@@ -361,7 +364,7 @@ function render(){
  if(mainTab==="Operations")html=subTab==="Jobs"?showJobs():subTab==="Schedule"?showSchedule():subTab==="Employees"?showEmployees():showHours();
  if(mainTab==="Finance")html=subTab==="Estimates"?showEstimates():subTab==="Invoices"?showInvoices():subTab==="Payments"?showPayments():subTab==="POS"?showPOS():showReports();
  if(mainTab==="Management")html=showManagement();
- $('stage').innerHTML=html;
+ $('stage').innerHTML=qaPanel()+html;
 }
 function activate(t){mainTab=t;subTab=TABS[t][0];edit=null;render()}
 function complete(msg){logActivity(msg);if(!persist()){db=JSON.parse(lastSavedSnapshot);render();return false}edit=null;render();return true}
@@ -407,6 +410,7 @@ document.addEventListener("click",event=>{
   db.invoices.push(inv);complete("Invoice created from estimate "+e.id);mainTab="Finance";subTab="Invoices";render();return;
  }
  const a=b.dataset.action;
+ if(a==="qa-arm-failure"&&qaMode){qaFailNextSave=true;render();return}
  if(a==="cancel"){edit=null;render()}
  if(a==="clear-customer-search"){customerSearch="";render()}
  if(a==="clear-job-filter"){jobFilter="";render()}
