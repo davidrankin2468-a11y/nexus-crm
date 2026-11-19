@@ -206,14 +206,22 @@ $("printReceipt").addEventListener("click",()=>window.print());
 async function record(){
  const items=[...cart].filter(([,q])=>q>0).map(([product_id,quantity])=>({product_id,quantity}));
  if(!pending&&!items.length)return;
- const attempt=pending||savePending(items);
+ let attempt;
+ try{attempt=pending||savePending(items)}
+ catch(e){showMessage("Checkout was not sent: "+e.message,true);return}
+ let result;
  try{
-  const result=await api("/api/pos/sales","POST",attempt);
+  result=await api("/api/pos/sales","POST",attempt);
   if(!result?.id)throw Error("Receipt confirmation missing");
-  clearPending();cart.clear();
-  await refresh();
-  showMessage("Recorded sale "+String(result.id).slice(0,8)+" — pending/unpaid. No payment charged.");
- }catch(e){showMessage("Checkout not confirmed: "+e.message+". Retry the same sale reference; do not create a second sale.",true)}
+ }catch(e){
+  showMessage("Checkout not confirmed: "+e.message+". Retry the same saved sale reference; do not start another checkout.",true);
+  return;
+ }
+ // The write is confirmed: never present a later read failure as a failed checkout.
+ clearPending();cart.clear();
+ showMessage("Recorded sale "+String(result.id).slice(0,8)+" — pending/unpaid. No payment charged.");
+ try{await refresh()}
+ catch(e){showMessage("Sale "+String(result.id).slice(0,8)+" was recorded successfully, but the product/sales list could not refresh: "+e.message+". Refresh the list; do not repeat checkout.",true)}
 }
 $("record").addEventListener("click",()=>work(record));
 $("retry").addEventListener("click",()=>work(record));
