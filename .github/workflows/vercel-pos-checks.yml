@@ -1,0 +1,78 @@
+name: Vercel POS backend checks
+on:
+  push:
+    branches: [feature/nexus-pos-crm-foundation]
+    paths:
+      - 'api/pos/**'
+      - 'lib/nexus-pos-server.js'
+      - 'tests/test_vercel_pos.mjs'
+      - 'tests/test_vercel_pos_auth.mjs'
+      - 'pos-secure/**'
+      - 'api/square/**'
+      - 'lib/nexus-square-sandbox.js'
+      - 'lib/nexus-square-connectivity.js'
+      - 'lib/nexus-square-payment-transport.js'
+      - 'lib/nexus-square-attempt.js'
+      - 'lib/nexus-square-submit-attempt.js'
+      - 'lib/nexus-square-verify-payment.js'
+      - 'tests/test_square_sandbox.mjs'
+      - 'tests/test_square_connectivity.mjs'
+      - 'tests/test_square_payment_transport.mjs'
+      - 'tests/test_square_*.mjs'
+      - 'vercel.json'
+      - '.github/workflows/vercel-pos-checks.yml'
+  pull_request:
+    paths:
+      - 'api/pos/**'
+      - 'lib/nexus-pos-server.js'
+      - 'tests/test_vercel_pos.mjs'
+      - 'tests/test_vercel_pos_auth.mjs'
+      - 'pos-secure/**'
+      - 'api/square/**'
+      - 'lib/nexus-square-sandbox.js'
+      - 'lib/nexus-square-connectivity.js'
+      - 'lib/nexus-square-payment-transport.js'
+      - 'lib/nexus-square-attempt.js'
+      - 'lib/nexus-square-submit-attempt.js'
+      - 'lib/nexus-square-verify-payment.js'
+      - 'tests/test_square_sandbox.mjs'
+      - 'tests/test_square_connectivity.mjs'
+      - 'tests/test_square_payment_transport.mjs'
+      - 'tests/test_square_*.mjs'
+      - 'vercel.json'
+      - '.github/workflows/vercel-pos-checks.yml'
+permissions:
+  contents: read
+jobs:
+  test-pos-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Vercel server modules
+        run: |
+          node --check lib/nexus-pos-server.js
+          node --check api/pos/products.js
+          node --check api/pos/login.js
+          node --check api/pos/companies.js
+          node --check api/pos/receipts.js
+          node --check api/pos/sales.js
+          node --check api/pos/status.js
+          node --check api/square/sandbox-status.js
+          node --check lib/nexus-square-sandbox.js
+          node --check lib/nexus-square-connectivity.js
+          node --check lib/nexus-square-payment-transport.js
+          node --check lib/nexus-square-attempt.js
+          node --check api/square/sandbox-connectivity.js
+          node --check api/square/sandbox-prepare.js
+          node --check api/square/sandbox-submit.js
+          node --check api/square/sandbox-webhook.js
+          node --check lib/nexus-square-submit-attempt.js
+          node --check lib/nexus-square-verify-payment.js
+          node --check api/square/sandbox-reconcile.js
+      - name: Run POS security and API tests
+        run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs tests/test_square_payment_transport.mjs tests/test_square_attempt.mjs tests/test_square_prepare_route.mjs tests/test_square_submit_attempt.mjs tests/test_square_verify_payment.mjs tests/test_square_reconcile_route.mjs

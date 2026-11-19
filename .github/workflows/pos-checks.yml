@@ -1,0 +1,48 @@
+name: Nexus POS checks
+on:
+  push:
+    branches: [feature/nexus-pos-crm-foundation]
+  pull_request:
+    paths:
+      - 'cloud-app/migrations/007_pos_multi_company.sql'
+      - 'cloud-app/functions/api/pos/**'
+      - 'cloud-app/public/pos/**'
+      - 'tests/test_pos_schema.py'
+      - '.github/workflows/pos-checks.yml'
+jobs:
+  pos-schema:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: POS schema and company-isolation constraints
+        run: python -m unittest discover -s tests -p 'test_pos_schema.py' -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Cloudflare POS API tests
+        run: node --test tests/test_cloudflare_pos.mjs
+      - name: Full SQLite POS API integration tests
+        run: node --test tests/test_pos_sqlite_integration.mjs
+      - name: Browser retry and company-scoping tests
+        run: node --test tests/test_pos_retry_client.mjs
+      - name: Main CRM browser JavaScript syntax
+        run: node --check cloud-app/public/assets/app.js
+      - name: CRM and POS shared-navigation security assertions
+        run: node --test tests/test_crm_pos_navigation.mjs
+      - name: Existing Cloudflare CRM login, RBAC and tenant security regression
+        run: node --test cloud-app/tests/security.test.mjs
+      - name: POS API JavaScript syntax
+        run: node --check 'cloud-app/functions/api/pos/[[path]].js'
+      - name: POS browser JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('cloud-app/public/pos/index.html').read_text()
+          scripts=re.findall(r'<script[^>]*>(.*?)</script>',html,re.S|re.I)
+          assert len(scripts)==1
+          Path('/tmp/nexus-pos-browser.js').write_text(scripts[0])
+          PY
+          node --check /tmp/nexus-pos-browser.js

@@ -209,7 +209,8 @@ function load(){
  return seed();
 }
 let db=load(),mainTab="Dashboard",subTab="Overview",edit=null,customerSearch="",jobFilter="";
-function persist(){try{localStorage.setItem(STORAGE,JSON.stringify(db))}catch(e){alert("Your browser cannot save this demo. Check storage permissions.")}}
+let lastSavedSnapshot=JSON.stringify(db);
+function persist(){try{const snapshot=JSON.stringify(db);localStorage.setItem(STORAGE,snapshot);lastSavedSnapshot=snapshot;return true}catch(e){alert("Changes were not saved. Browser storage is unavailable or full. The last saved records will be restored.");return false}}
 function logActivity(txt){db.activity.unshift({at:new Date().toISOString(),text:String(txt).slice(0,240)});db.activity=db.activity.slice(0,80)}
 function customer(cid){return db.customers.find(x=>String(x.id)===String(cid))}
 function employee(eid){return db.employees.find(x=>String(x.id)===String(eid))}
@@ -363,7 +364,7 @@ function render(){
  $('stage').innerHTML=html;
 }
 function activate(t){mainTab=t;subTab=TABS[t][0];edit=null;render()}
-function complete(msg){logActivity(msg);persist();edit=null;render()}
+function complete(msg){logActivity(msg);if(!persist()){db=JSON.parse(lastSavedSnapshot);render();return false}edit=null;render();return true}
 function printDoc(kind,docId){
  const x=kind==="invoice"?invoice(docId):db.estimates.find(e=>String(e.id)===String(docId));
  if(!x)return;

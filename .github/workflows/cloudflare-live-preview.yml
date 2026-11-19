@@ -1,0 +1,26 @@
+name: Live Cloudflare CRM + POS preview smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/nexus-pos-crm-foundation]
+    paths:
+      - 'cloud-app/functions/api/**'
+      - 'cloud-app/public/**'
+      - 'cloud-app/migrations/**'
+      - 'tests/test_cloudflare_live_preview.mjs'
+      - '.github/workflows/cloudflare-live-preview.yml'
+permissions:
+  contents: read
+jobs:
+  live-staging-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify deployed staging URL without login or writes
+        run: node --test tests/test_cloudflare_live_preview.mjs

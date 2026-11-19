@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,licenseInfo:null,licenseError:"",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -41,7 +41,7 @@ function notice(text){
 function authScreen(mode){
  s.account=null;s.csrf="";s.newMfaSecret=null;s.mfaChallenge=null;
  const setup=mode==="setup";
- $("mount").innerHTML='<div class="auth"><h1>'+ (setup?"Set up Nexus CRM":"Nexus CRM Sign In") +'</h1>'+
+ $("mount").innerHTML='<div class="auth"><h1>'+ (setup?"Set up Nexus CRM":"Sign in to Nexus CRM") +'</h1>'+
  '<p>'+(setup?"Create your first private company administrator account.":"Sign in to your private cloud CRM.")+'</p>'+
  '<form data-form="'+(setup?"setup":"login")+'">'+
  (setup?'<label>One-time setup code<input name="setupCode" required minlength="30" autocomplete="off" placeholder="Paste your setup code"></label>'+
@@ -176,11 +176,92 @@ function localDate(){
  const d=new Date();const f=new Date(d.getTime()-d.getTimezoneOffset()*60000);
  return f.toISOString().slice(0,10);
 }
-const financeViews=["Estimates","Invoices","Payments","Reports"];
+
+
+/* Keep a pending sale's idempotency key until the server confirms the result.
+   The account/company scope prevents a different company from retrying it. */
+function posPendingStorageKey(){
+ return "nexus-pos-pending:"+String(s.account?.email||"").toLowerCase()+":"+String(s.account?.company||"").toLowerCase();
+}
+function posPendingRead(){
+ if(!s.account)return null;
+ try{
+  const value=JSON.parse(sessionStorage.getItem(posPendingStorageKey())||"null");
+  if(!value||typeof value.idempotency_key!=="string"||!/^[-A-Za-z0-9_]{8,100}$/.test(value.idempotency_key)||!Array.isArray(value.items)||value.items.length<1||value.items.length>50)return null;
+  if(value.items.some(x=>!x||typeof x.product_id!=="string"||!Number.isSafeInteger(x.quantity)||x.quantity<1))return null;
+  if(value.customer_id!==undefined&&value.customer_id!==null&&typeof value.customer_id!=="string")return null;
+  return value;
+ }catch{return null}
+}
+function posPendingStart(items){
+ const existing=posPendingRead();
+ if(existing)return existing;
+ const attempt={idempotency_key:crypto.randomUUID().replace(/-/g,""),items,tax_cents:0,customer_id:s.posCustomerId||null};
+ try{sessionStorage.setItem(posPendingStorageKey(),JSON.stringify(attempt))}
+ catch{throw Error("Safe checkout storage is unavailable. No sale was sent. Enable session storage and retry.")}
+ return attempt;
+}
+function posPendingFinish(){
+ try{sessionStorage.removeItem(posPendingStorageKey())}
+ catch{/* The server has already confirmed; no new attempt occurs here. */}
+}
+async function posCommit(){
+ if(s.posBusy)return;
+ let attempt=posPendingRead();
+ if(!attempt){
+  const items=Object.entries(s.posCart).filter(([,quantity])=>quantity>0).map(([product_id,quantity])=>({product_id,quantity}));
+  if(!items.length)return;
+  try{attempt=posPendingStart(items)}catch(e){notice(e.message);return}
+ }
+ s.posBusy=true;draw();
+ try{
+  const receipt=await request("/api/pos/sales","POST",attempt);
+  if(!receipt?.id)throw Error("Sale response did not contain a receipt reference");
+  posPendingFinish();s.posCart={};s.posCustomerId="";await loadPos();
+  notice("Sale "+receipt.id+" recorded as pending/unpaid. No card was charged.");
+ }catch(err){
+  notice("Sale outcome not yet confirmed: "+err.message+". Retry the same pending sale to avoid a duplicate.");
+ }finally{s.posBusy=false;draw()}
+}
+
+async function loadPos(){
+ try{const [p,sales]=await Promise.all([request("/api/pos/products"),request("/api/pos/sales")]);s.posProducts=p.items;s.posSales=sales.items;s.posError="";}
+ catch(e){s.posError=e.message||"POS unavailable";}
+ draw();
+}
+function posContent(){
+ const nav=sectionNav(["Checkout","Inventory","Customers","Reports"],s.posView,"posview","POS sections");
+ const pending=posPendingRead();
+ const pendingAlert=pending?panel("Checkout awaiting confirmation",'<p>A previous attempt may already be recorded. Retry with the same checkout reference; do not create a second sale.</p><button data-action="pos-retry" type="button" '+(s.posBusy?"disabled":"")+'>Retry pending sale safely</button>'):"";
+ const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert;
+ if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
+ if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
+ if(s.posView==="Reports"){
+  const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);
+  const rows=s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td><td>'+(x.status==="pending"?'<button type="button" data-pos-void="'+safe(x.id)+'">Void unpaid</button>':"—")+'</td></tr>');
+  const records=panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount","Action"],rows));
+  const exportPanel=s.account?.role==="owner"?panel("Encrypted POS backup",'<p>Download company-scoped inventory, sales, sale lines, stock movements, refunds, and event records encrypted with a backup passphrase on this device. No password or card data is exported. Independent restoration is not implemented yet.</p>'+
+    '<form data-form="pos-download" class="gridform"><label>Backup passphrase<input required type="password" name="backupPassphrase" minlength="12" maxlength="256" autocomplete="new-password"></label>'+
+    '<label>Repeat backup passphrase<input required type="password" name="confirmPassphrase" minlength="12" maxlength="256" autocomplete="new-password"></label>'+
+    '<div class="actionrow"><button type="submit" class="primary">Download encrypted POS records</button></div></form>'):"";
+  return nav+warn+records+exportPanel;
+ }
+ if(s.posView==="Inventory")return nav+warn+editorPanel("Add product",'<form data-form="pos-product" class="gridform"><label>SKU<input required name="sku" pattern="[-A-Za-z0-9_]+" maxlength="60"></label><label>Product name<input required name="name" maxlength="200"></label><label>Price ($)<input required name="price" type="number" min="0" step=".01" max="1000000"></label><label>Starting stock<input required name="stock_quantity" type="number" min="0" step="1" max="1000000"></label><button class="primary" type="submit">Save product</button></form>')+panel("Inventory",table(["SKU","Name","Price","Stock"],s.posProducts.map(p=>'<tr><td>'+safe(p.sku)+'</td><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td></tr>')));
+ const rows=Object.entries(s.posCart).map(([id,q])=>({p:s.posProducts.find(x=>x.id===id),q})).filter(x=>x.p&&x.q>0);
+ const total=rows.reduce((a,x)=>a+x.p.price_cents*x.q,0);
+ return nav+warn+panel("Products",table(["Item","Price","Stock","Add"],s.posProducts.filter(x=>x.active).map(p=>'<tr><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td><td><button data-pos-add="'+safe(p.id)+'" '+(pending||s.posBusy||p.stock_quantity<=(s.posCart[p.id]||0)?"disabled":"")+'>Add</button></td></tr>')))+
+ panel("Checkout cart",'<label>CRM customer (optional)<select data-pos-customer="1" '+(pending||s.posBusy?"disabled":"")+'>'
+  +'<option value="">Walk-in / no customer</option>'
+  +s.customers.map(c=>'<option value="'+safe(c.id)+'" '+(c.id===s.posCustomerId?"selected":"")+'>'+safe(c.name)+'</option>').join("")
+  +'</select></label>'+table(["Item","Qty","Subtotal","Remove"],rows.map(x=>'<tr><td>'+safe(x.p.name)+'</td><td>'+safe(x.q)+'</td><td>'+money(x.p.price_cents*x.q/100)+'</td><td><button data-pos-remove="'+safe(x.p.id)+'">−1</button></td></tr>'))+
+ '<h3>Total before tax: '+money(total/100)+'</h3><div class="actionrow"><button data-action="pos-record" class="primary" '+(!total||s.posBusy||pending?"disabled":"")+'>Record sale (unpaid)</button><button data-action="pos-clear" '+(pending||s.posBusy?"disabled":"")+'>Clear cart</button></div>');
+}
+const financeViews=["Estimates","Invoices","Payments","Reports","POS"];
 const estimateStatusOptions=selected=>["Draft","Sent","Accepted","Declined"].map(v=>'<option value="'+v+'" '+(v===selected?"selected":"")+'>'+v+'</option>').join("");
 const financeNavigation=()=>sectionNav(financeViews,s.financeView,"finance","Finance sections");
 function financeContent(){
  const nav=financeNavigation(),view=s.financeView;
+ if(view==="POS")return nav+posContent();
  if(s.financeError)return nav+panel("Finance needs attention",'<p>Unable to load cloud financial records: '+safe(s.financeError)+'</p><p>Your customers and jobs are still available. Select Refresh data to try Finance again.</p>');
  if(view==="Estimates"){
   const e=s.estimates.find(x=>x.id===s.editingEstimate);
@@ -286,7 +367,7 @@ function printFinance(kind,recordId){
  w.document.open();w.document.write(content);w.document.close();w.focus();w.print();
 }
 
-const managementTabs=["Backups","Security","Sales Leads","Companies","Team Access"];
+const managementTabs=["Backups","Security","Licensing","Sales Leads","Companies","Team Access"];
 function describeBackupCounts(counts){
  const labels={customers:"customers",employees:"employees",jobs:"jobs",appointments:"appointments",estimates:"estimates",invoices:"invoices",payments:"payments"};
  return Object.entries(labels).map(([k,v])=>safe(counts?.[k]??0)+" "+v).join(" · ");
@@ -320,7 +401,7 @@ function exportLeadsCsv(){
  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-async function encryptedBackupDownload(data,passphrase){
+async function encryptedBackupDownload(data,passphrase,kind="crm"){
  if(!globalThis.crypto?.subtle)throw Error("Your browser does not support secure encrypted file exports.");
  if(passphrase.length<12||passphrase.length>256)throw Error("Backup passphrase must be 12–256 characters.");
  const salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
@@ -345,7 +426,7 @@ async function encryptedBackupDownload(data,passphrase){
  const content=new Blob([JSON.stringify(packageData,null,2)],{type:"application/json"});
  const url=URL.createObjectURL(content);
  const anchor=document.createElement("a");
- anchor.href=url;anchor.download="nexus-crm-encrypted-backup-"+localDate()+".json";
+ anchor.href=url;anchor.download="nexus-"+(kind==="pos"?"pos":"crm")+"-encrypted-backup-"+localDate()+".json";
  document.body.appendChild(anchor);anchor.click();anchor.remove();
  setTimeout(()=>URL.revokeObjectURL(url),5000);
  return true;
@@ -370,9 +451,9 @@ async function verifyLocalEncryptedBackup(file,passphrase){
  try{decoded=await crypto.subtle.decrypt({name:"AES-GCM",iv},key,data)}
  catch{throw Error("Cannot decrypt this backup. Check your passphrase or file integrity.")}
  const parsed=JSON.parse(new TextDecoder().decode(decoded));
- if(parsed?.format!=="nexus-crm-business-export-v1"||parsed.schemaVersion!==1||!parsed.records||typeof parsed.records!=="object")
+ if(!["nexus-crm-business-export-v1","nexus-pos-company-export-v1"].includes(parsed?.format)||parsed.schemaVersion!==1||!parsed.records||typeof parsed.records!=="object")
   throw Error("Decrypted file is not a supported Nexus CRM business export.");
- const keys=["customers","employees","jobs","estimates","invoices","appointments","payments"];
+ const keys=parsed.format==="nexus-pos-company-export-v1"?["pos_products","pos_sales","pos_sale_items","pos_inventory_movements","pos_refunds","pos_payment_events"]:["customers","employees","jobs","estimates","invoices","appointments","payments"];
  for(const k of keys){if(!Array.isArray(parsed.records[k]))throw Error("Backup is missing "+k+" records.")}
  return {createdAt:parsed.createdAt,company:parsed.company,counts:Object.fromEntries(keys.map(k=>[k,parsed.records[k].length]))};
 }
@@ -501,12 +582,27 @@ function teamAccessContent(){
   panel("Invitations · "+s.staffInvites.length,table(["Email","Role","Status","Action"],invites));
 }
 
+async function loadLicenseInfo(){
+ try{const info=await request("/api/pos/licensing");s.licenseInfo=info;s.licenseError="";}
+ catch(err){s.licenseError=err.message||"License catalog unavailable";s.licenseInfo=null}
+ draw();
+}
+function licenseManagementContent(){
+ if(s.licenseError)return panel("License information unavailable",'<p>'+safe(s.licenseError)+'</p><button data-action="license-refresh" type="button">Retry</button>');
+ if(!s.licenseInfo)return panel("Nexus Software licensing",'<p>Loading your company license status…</p><button data-action="license-refresh" type="button">Refresh</button>');
+ const info=s.licenseInfo,license=info.license||{status:"unlicensed"};
+ const cards=(info.plans||[]).map(p=>'<div class="card"><strong>'+safe(p.label)+'</strong><p>'+money(p.price_cents/100)+' / '+safe(p.billing_period)+'</p><small class="muted">Proposed plan · not available for purchase</small></div>').join("");
+ return panel("Nexus CRM licensing",'<p><strong>Company status:</strong> '+safe(license.status||"unlicensed")+'</p>'+
+  '<p class="panel-note">These prices are draft options. Square billing and license activation are disabled until verified webhooks, company provisioning, taxes, and owner approval are complete.</p>'+
+  '<div class="cards">'+cards+'</div><div class="actionrow"><button data-action="license-refresh" type="button">Refresh license status</button></div>');
+}
 function managementContent(){
  const nav=sectionNav(managementTabs.filter(tab=>!["Sales Leads","Companies"].includes(tab)||s.account?.isPlatformOperator),s.managementView,"management","Management sections");
  if(s.account?.role!=="owner")return nav+panel("Owner controls",'<p>Backups and security operations are restricted to the company owner.</p>');
  if(s.managementView==="Sales Leads")return s.account?.isPlatformOperator?nav+salesLeadsContent():nav+panel("Access denied","<p>This area is reserved for the Nexus platform operator.</p>");
  if(s.managementView==="Companies")return nav+companyAccessContent();
  if(s.managementView==="Team Access")return nav+teamAccessContent();
+ if(s.managementView==="Licensing")return nav+licenseManagementContent();
  if(s.recoveryError)return nav+panel("Management temporarily unavailable",'<p>'+safe(s.recoveryError)+'</p><p>Customers and jobs remain accessible. Use Refresh data to try again.</p>');
  if(s.managementView==="Backups"){
   const entries=s.backupItems.map(x=>'<tr><td>'+safe(new Date(x.createdAt*1000).toLocaleString())+'</td>'+
@@ -565,7 +661,13 @@ function currentTab(){
   d.innerHTML='<div class="cards overview-cards">'+
   '<div class="card">Customers<strong>'+x.customers+'</strong></div>'+
   '<div class="card">Open jobs<strong>'+x.openJobs+'</strong></div>'+'<div class="card">Employees<strong>'+s.employees.length+'</strong></div>'+'<div class="card">Appointments<strong>'+s.appointments.length+'</strong></div>'+
-  '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>';
+  '<div class="card">Job pipeline<strong>'+money(x.jobPipeline)+'</strong></div></div>'+
+   // POS belongs inside Finance; use the existing CRM session and tenant context.
+   (["owner","admin"].includes(s.account?.role)
+     ?panel("Sales & Finance · Nexus POS",'<p>Use POS checkout, inventory, CRM customers, and sales reports inside Finance. Test sales remain pending/unpaid; no Square charge is made.</p>'+
+       '<div class="actionrow"><button type="button" class="primary" data-action="open-integrated-pos">Open POS inside CRM</button>'+
+       '<button type="button" data-action="open-finance">Open Sales & Finance</button></div>')
+     :"");
  }
  if(s.page==="Customers"){
   const editing=s.customers.find(c=>c.id===s.editingCustomer);
@@ -730,9 +832,17 @@ document.addEventListener("click",async e=>{
  }
  if(b.dataset.action==="hide-recovery"){s.newRecoveryCodes=null;draw();notice("Recovery codes hidden.");return}
  if(b.dataset.page){s.newRecoveryCodes=null;s.newMfaSecret=null;s.page=b.dataset.page;s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();notice("");return}
- if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");return}
+ if(b.dataset.action==="open-integrated-pos"){
+  if(!s.account||!["owner","admin"].includes(s.account.role)){notice("POS access denied.");return}
+  s.page="Finance";s.financeView="POS";draw();notice("");await loadPos();return;
+ }
+ if(b.dataset.action==="open-finance"){
+  if(!s.account||!["owner","admin"].includes(s.account.role)){notice("Finance access denied.");return}
+  s.page="Finance";s.financeView="Estimates";draw();notice("");return;
+ }
+ if(b.dataset.finance){s.financeView=b.dataset.finance;s.editingEstimate=null;draw();notice("");if(s.financeView==="POS")await loadPos();return}
  if(b.dataset.operation){s.operationsView=b.dataset.operation;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;draw();notice("");return}
- if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");return}
+ if(b.dataset.management){s.managementView=b.dataset.management;s.backupPreview=null;if(s.managementView!=="Security"){s.newRecoveryCodes=null;s.newMfaSecret=null;}if(s.managementView!=="Companies")s.newInvite=null;draw();notice("");if(s.managementView==="Licensing")await loadLicenseInfo();return}
  if(b.dataset.action==="copy-company-invite"){
   if(!s.newInvite)return;
   const link=location.origin+"/#invite="+s.newInvite.token;
@@ -773,15 +883,48 @@ document.addEventListener("click",async e=>{
  if(b.dataset.export){saveCSV(b.dataset.export);return}
  if(b.dataset.appointment){s.page="Operations";s.operationsView="Schedule";s.editingAppointment=b.dataset.appointment;draw();return}
  if(b.dataset.action==="cancel-edit"){s.editingCustomer=null;s.editingJob=null;s.editingEmployee=null;s.editingAppointment=null;s.editingEstimate=null;draw();return}
+ if(b.dataset.posview){s.posView=b.dataset.posview;draw();return}
+ if(b.dataset.posAdd){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const p=s.posProducts.find(x=>x.id===b.dataset.posAdd);if(p&&p.active&&!s.posBusy&&(s.posCart[p.id]||0)<p.stock_quantity){s.posCart[p.id]=(s.posCart[p.id]||0)+1;draw()}return}
+ if(b.dataset.posRemove){if(posPendingRead()){notice("Resolve the pending checkout before changing the cart.");return}const id=b.dataset.posRemove;s.posCart[id]=Math.max(0,(s.posCart[id]||0)-1);if(!s.posCart[id])delete s.posCart[id];draw();return}
+ if(b.dataset.action==="pos-clear"){if(posPendingRead()){notice("A checkout needs confirmation before clearing the cart.");return}s.posCart={};draw();return}
+ if(b.dataset.posVoid){
+  const saleId=b.dataset.posVoid;
+  if(!s.posSales.some(x=>x.id===saleId&&x.status==="pending")){notice("Only pending sales can be voided.");return}
+  if(!confirm("Void this UNPAID sale and restore its reserved stock? This does not refund a card."))return;
+  b.disabled=true;
+  try{
+   const result=await request("/api/pos/sales/void","POST",{sale_id:saleId,confirm:"VOID UNPAID SALE"});
+   await loadPos();notice("Unpaid sale "+result.id+" voided. Stock restored; no payment or refund processed.");
+  }catch(err){notice(err.message)}
+  finally{b.disabled=false}
+  return;
+ }
+ if(b.dataset.action==="pos-refresh"){await loadPos();return}
+ if(b.dataset.action==="license-refresh"){await loadLicenseInfo();return}
+ if(b.dataset.action==="pos-retry"){await posCommit();return}
+ if(b.dataset.action==="pos-record"){await posCommit();return}
  if(b.dataset.action==="retry"){await start();return}
- if(b.dataset.action==="refresh"){try{await refresh();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
+ if(b.dataset.action==="refresh"){try{await refresh();if(s.page==="Finance"&&s.financeView==="POS")await loadPos();notice("Records refreshed from the cloud database.")}catch(err){notice(err.message)}return}
  if(b.dataset.action==="logout"){try{await request("/api/logout","POST",{});s.account=null;s.csrf="";authScreen("login");notice("Signed out.")}catch(err){notice(err.message)}}
+});
+document.addEventListener("change",e=>{
+ if(!e.target?.matches?.('select[data-pos-customer]'))return;
+ if(posPendingRead()||s.posBusy){draw();return}
+ const id=e.target.value;
+ if(id&&!s.customers.some(c=>c.id===id)){notice("CRM customer is unavailable");draw();return}
+ s.posCustomerId=id;draw();
 });
 document.addEventListener("submit",async e=>{
  const f=e.target;if(!f.dataset.form)return;
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="pos-product"){
+   const price=Number(data.price),stock=Number(data.stock_quantity);
+   if(!Number.isFinite(price)||price<0||!Number.isSafeInteger(Math.round(price*100))||!Number.isSafeInteger(stock)||stock<0)throw Error("Invalid product");
+   await request("/api/pos/products","POST",{sku:data.sku,name:data.name,price_cents:Math.round(price*100),stock_quantity:stock});
+   await loadPos();notice("Company product saved.");return;
+  }
   if(type==="recover"){
    if(data.newPassword!==data.confirmPassword)throw Error("New passwords do not match.");
    if(String(data.newPassword).length<14)throw Error("Use at least 14 characters for your new password.");
@@ -875,6 +1018,14 @@ document.addEventListener("submit",async e=>{
    const verified=await verifyLocalEncryptedBackup(data.backupFile,data.backupPassphrase);
    notice("Encrypted backup verified for "+verified.company+": "+describeBackupCounts(verified.counts)+". File was checked locally, not uploaded.");
    f.reset();return;
+  }
+  if(type==="pos-download"){
+   if(s.account?.role!=="owner")throw Error("Only the company owner can export POS records.");
+   if(data.backupPassphrase!==data.confirmPassphrase)throw Error("The POS backup passphrases do not match.");
+   if(String(data.backupPassphrase).length<12)throw Error("Use a backup passphrase of at least 12 characters.");
+   const records=await request("/api/pos/export");
+   await encryptedBackupDownload(records,data.backupPassphrase,"pos");
+   notice("Encrypted POS records saved to your device. Keep the file and passphrase secure; independent restoration requires support.");return;
   }
   if(type==="download-backup"){
    if(data.backupPassphrase!==data.confirmPassphrase)throw Error("The backup passphrases do not match.");
