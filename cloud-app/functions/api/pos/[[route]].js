@@ -78,7 +78,6 @@ function checkWrite(req,res){if(!sameOrigin(req)){respond(res,403,{error:"Origin
 function validSale(x){return x&&Array.isArray(x.items)&&x.items.length>=1&&x.items.length<=50&&x.items.every(i=>i&&typeof i.product_id==="string"&&/^[0-9a-f-]{36}$/i.test(i.product_id)&&Number.isSafeInteger(i.quantity)&&i.quantity>=1&&i.quantity<=1000)&&new Set(x.items.map(i=>i.product_id.toLowerCase())).size===x.items.length&&typeof x.idempotency_key==="string"&&/^[a-zA-Z0-9_-]{8,100}$/.test(x.idempotency_key)&&x.tax_cents===0}
 
  // Consolidated POS API entry point. Existing handlers retain their original authorization and validation.
-import {actor,allow,authenticatedUser,checkWrite,configured,database,passwordSignIn,respond,validProduct,validSale} from "../../lib/nexus-pos-server.js";
 
 // Preserved handler: companies
 // List only companies for the verified Supabase Auth user, never arbitrary user IDs.
