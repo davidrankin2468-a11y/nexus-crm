@@ -84,3 +84,11 @@
 - Additional mocked reconciliation regression cases committed for wrong provider amount, wrong location, and wrong sale reference. **CI execution not confirmed**; these are not recorded as passed tests.
 - The GitHub PR remains draft and the Vercel Hobby plan's 12-function limit blocks the expanded Vercel backend. No paid upgrade or production changes authorized.
 - Next engineering work: implement a Cloudflare-native authenticated provider verification route with secret bindings, run isolated end-to-end staging checks, then verify Square webhooks and refund handling. Never move secrets through GitHub source or chat.
+
+## Cloudflare staging deployment — November 19, 2026 UTC
+
+- Successfully uploaded an updated **existing** Cloudflare Worker `nexus-crm-pos-integrated-preview` using the Cloudflare API. Deployment `497dfefb-dbe7-431d-981a-d0d3453fc764`, version `3e3cf221-8d31-4ef9-b7a1-1e397895a6b5`, assigned 100%.
+- Preserved the four existing modules (`assets.js`, `crm-api.js`, `pos-api.js`, `worker.js`) and D1 `DB` binding. Read-back of deployed content confirmed the five-tab app, POS routing, static assets and new read-only `GET /api/square/sandbox-readiness` endpoint.
+- The endpoint returns only boolean configuration indicators and explicitly `paymentProcessing:false`, `providerVerified:false`, `liveChargesEnabled:false`. It does not call Square or accept payments.
+- **Important:** this direct staging Worker update was not generated from the GitHub source tree; it must be reconciled into the deployment build process before the next automated deploy. Do not describe this as a successful live end-to-end test; no HTTP smoke result or Square provider connection has been confirmed.
+- Cloudflare Worker still has only a D1 binding, **not** the Square sandbox secrets. The Vercel Preview variables do not automatically transfer to Cloudflare.
