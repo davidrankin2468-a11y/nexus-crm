@@ -728,7 +728,7 @@ test("restricted Gmail staff pilot invitation sends to operator alias, activates
   const me=await expectStatus(db,staff,"GET","/api/me",undefined,200,{env});
   assert.equal(me.user.role,"employee");
   assert.equal(me.user.isPlatformOperator,false);
-  assert.equal(me.user.tenant_id,entry.tenant_id);
+  assert.equal(db.raw.prepare("SELECT tenant_id FROM users WHERE email=?").get(created.email).tenant_id,entry.tenant_id);
   assert.deepEqual((await expectStatus(db,staff,"GET","/api/customers",undefined,200,{env})).items,[]);
   await expectStatus(db,staff,"GET","/api/invoices",undefined,403,{env});
   await expectStatus(db,staff,"GET","/api/staff/invitations",undefined,403,{env});
