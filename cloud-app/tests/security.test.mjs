@@ -211,6 +211,35 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM email_self_test_limits").get().n,1);
   }finally{globalThis.fetch=saved;}
  });
+ await t.test("provider rejection is categorized safely and shortens retry cooldown",async()=>{
+  const secret="local-fake-resend-credential-not-production";
+  const env={EMAIL_SELF_TEST_ENABLED:"true",EMAIL_DELIVERY_MODE:"disabled",
+   RESEND_API_KEY:secret,RESEND_FROM:"notifications@nexussoftwareusa.com",
+   RESEND_SENDER_DOMAIN_VERIFIED:"true",PUBLIC_APP_ORIGIN:"https://qa.nexus.example.org"};
+  db.raw.prepare("DELETE FROM email_self_test_limits").run();
+  const saved=globalThis.fetch;
+  let calls=0;
+  try{
+   globalThis.fetch=async()=>{
+    calls++;
+    return {ok:false,status:401,json:async()=>({message:"possibly-sensitive-provider-error",name:"invalid_api_key"})};
+   };
+   const r=await call(db,a,"POST","/api/platform/email-self-test",{password:passwordA},{env});
+   assert.equal(r.status,502);
+   assert.match(r.json.error,/API key \(401\)/);
+   assert.ok(!JSON.stringify(r.json).includes("possibly-sensitive-provider-error"));
+   assert.ok(!JSON.stringify(r.json).includes(secret));
+   assert.equal(calls,1);
+   const wait=db.raw.prepare("SELECT next_allowed_at FROM email_self_test_limits").get();
+   assert.ok(wait.next_allowed_at<=Math.floor(Date.now()/1000)+123);
+   assert.ok(wait.next_allowed_at>=Math.floor(Date.now()/1000)+115);
+   await expectStatus(db,a,"POST","/api/platform/email-self-test",{password:passwordA},429,{env});
+   assert.equal(calls,1);
+  }finally{
+   globalThis.fetch=saved;
+   db.raw.prepare("DELETE FROM email_self_test_limits").run();
+  }
+ });
  await t.test("email invitation delivery fails closed when verified sender is unavailable",async()=>{
   const before=db.raw.prepare("SELECT count(*) AS n FROM company_invitations").get().n;
   await expectStatus(db,a,"POST","/api/platform/invitations",{
