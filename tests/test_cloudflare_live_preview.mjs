@@ -50,6 +50,18 @@ test("anonymous requests cannot read CRM or POS companies or licensing",async()=
   assert.equal(response.status,401,"Expected private "+path+" to reject anonymous requests");
  }
 });
+test("anonymous users cannot send company invitations or bypass private onboarding",async()=>{
+ const {response}=await get("/api/platform/invitations",{
+  method:"POST",headers:{"Content-Type":"application/json","Origin":base},
+  body:JSON.stringify({companyName:"Never created",email:"not-a-user@example.invalid",deliveryMode:"email"})
+ });
+ assert.equal(response.status,401,"Invitations must be platform-operator-only");
+ const {response:unknown}=await get("/api/public/signup",{
+  method:"POST",headers:{"Content-Type":"application/json","Origin":base},
+  body:JSON.stringify({email:"not-a-user@example.invalid"})
+ });
+ assert.equal(unknown.status,401,"Public signup must not register unauthenticated visitors");
+});
 test("anonymous POST to POS cannot write a sale or run a payment",async()=>{
  const {response}=await get("/api/pos/sales",{
   method:"POST",headers:{"Content-Type":"application/json","Origin":base},
