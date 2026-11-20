@@ -1,7 +1,15 @@
 # Nexus Software Solutions — transactional business email verification
 
 **Checked:** November 19, 2026, America/Chicago.  
-**State:** BLOCKED ON OWNED DOMAIN / VERIFIED PROVIDER. No actual send has been performed; customer onboarding must remain a private test pilot.
+**State:** DOMAIN REGISTERED; OUTBOUND PROVIDER VERIFICATION PENDING. No real outbound send has been performed; customer onboarding remains a private test pilot.
+
+## Latest domain and preview status — November 19, 2026, Central time
+
+- **Domain registered and active:** `NexusSoftwareUSA.com` is in the connected Cloudflare Registrar account; registration expires November 19, 2027 (America/Chicago). Auto-renew is currently enabled.
+- **Incoming mail tested:** `contact@NexusSoftwareUSA.com` and `support@NexusSoftwareUSA.com` are enabled Cloudflare Email Routing aliases forwarding to the owner's verified Gmail destination. The owner confirmed a successful delivered test to contact@.
+- **Resend sending domain:** CNAME records `send.nexussoftwareusa.com` and `rsend.nexussoftwareusa.com` and DKIM TXT `resend._domainkey.nexussoftwareusa.com` are present in Cloudflare DNS. **This is not proof Resend accepted the domain:** the latest user screenshot shows Resend pending its own checks.
+- **Business Email Lab live:** private operator-only, no-send preview in the existing Management → Companies CRM tab; does not create customer invites or expose secrets. Latest offline [CRM/POS tests](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44683492842) and rerun [live Cloudflare smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44683492862) passed after preview deployment.
+- **No changes to payment gates or midnight backups.** The backed-up Worker cron remains unchanged. No Resend API key or verified production sender has been installed.
 
 ## Evidence gathered
 
