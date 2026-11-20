@@ -616,7 +616,7 @@ test("isolated platform Gmail-plus pilot invitation: no customer sending, one-ti
  db.raw.exec(readFileSync(new URL("../migrations/005_platform_operator.sql",import.meta.url),"utf8"));
  const env={EMAIL_INVITATION_PILOT_ENABLED:"true",EMAIL_DELIVERY_MODE:"disabled",
   RESEND_API_KEY:"ci-fake-provider-never-live",RESEND_FROM:"notifications@nexussoftwareusa.com",
-  RESEND_SENDER_DOMAIN_VERIFIED:"true",PUBLIC_APP_ORIGIN:"https://qa.nexus.invalid"};
+  RESEND_SENDER_DOMAIN_VERIFIED:"true",PUBLIC_APP_ORIGIN:"https://qa.nexus.example.org"};
  assert.equal((await expectStatus(db,owner,"GET","/api/platform/email-lab",undefined,200,{env})).pilotInviteAvailable,true);
  assert.equal((await expectStatus(db,owner,"GET","/api/platform/email-lab",undefined,200,{env:{...env,EMAIL_INVITATION_PILOT_ENABLED:"false"}})).pilotInviteAvailable,false);
  await expectStatus(db,null,"POST","/api/platform/email-invite-pilot",{password:ownerPw},401,{env});
