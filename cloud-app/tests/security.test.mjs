@@ -65,7 +65,7 @@ async function call(db,session,method,path,data,options={}){
  if(session?.cookie&&!options.noCookie)h.set("Cookie",session.cookie);
  if(session?.csrf&&!options.noCsrf)h.set("X-Nexus-CSRF",session.csrf);
  const req=new Request(base+path,{method,headers:h,body:data===undefined?undefined:JSON.stringify(data)});
- const res=await onRequest({request:req,env:{DB:db,MFA_MASTER_KEY:TEST_MFA_MASTER_KEY}});
+ const res=await onRequest({request:req,env:{DB:db,MFA_MASTER_KEY:TEST_MFA_MASTER_KEY,...(options.env||{})}});
  let json;
  try{json=await res.json()}catch{json={error:"Non-JSON API response"}}
  const cookie=res.headers.get("set-cookie");
@@ -176,6 +176,71 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    email:"staff-no-send@example.invalid",role:"employee",password:passwordB,deliveryMode:"email"
   },503);
   assert.equal(db.raw.prepare("SELECT count(*) AS n FROM staff_invitations").get().n,0);
+ });
+ await t.test("email invitation provider delivery is token-private, owner-restricted and revocable",async()=>{
+  const config={
+   EMAIL_DELIVERY_MODE:"resend",
+   RESEND_API_KEY:"testing-provider-key-not-real",
+   RESEND_FROM:"test@nexus.example.org",
+   RESEND_SENDER_DOMAIN_VERIFIED:"true",
+   PUBLIC_APP_ORIGIN:"https://crm.nexus.example.org",
+   REQUIRE_VERIFIED_INVITATION_EMAIL:"true"
+  };
+  const oldFetch=globalThis.fetch;
+  const sent=[];
+  globalThis.fetch=async (url,options)=>{
+   assert.equal(url,"https://api.resend.com/emails");
+   const message=JSON.parse(options.body);
+   sent.push(message);
+   assert.ok(message.text.includes("https://crm.nexus.example.org/#"));
+   return new Response(JSON.stringify({id:"accepted-provider-test"}),{status:200,headers:{"Content-Type":"application/json"}});
+  };
+  try{
+   await expectStatus(db,a,"POST","/api/platform/invitations",{
+    companyName:"Manual Must Fail",email:"manual-denied@example.invalid",password:passwordA
+   },403,{env:config});
+   const sentInvite=await expectStatus(db,a,"POST","/api/platform/invitations",{
+    companyName:"Email QA Tenant",email:"email-qa-owner@example.invalid",password:passwordA,deliveryMode:"email"
+   },201,{env:config});
+   assert.equal(sentInvite.emailSubmitted,true);
+   assert.equal(sentInvite.token,undefined,"Email delivery must not reveal invite token in HTTP response");
+   assert.equal(sent.length,1);
+   assert.equal(sent[0].to[0],"email-qa-owner@example.invalid");
+   assert.equal(sent[0].text.includes("/#invite="),true);
+   await expectStatus(db,b,"POST","/api/platform/invitations",{
+    companyName:"Unauthorized",email:"unauthorized@example.invalid",password:passwordB,deliveryMode:"email"
+   },403,{env:config});
+   await expectStatus(db,a,"POST","/api/platform/invitations/"+sentInvite.id+"/revoke",{password:passwordA},200,{env:config});
+   const staff=await expectStatus(db,b,"POST","/api/staff/invitations",{
+    email:"email-qa-staff@example.invalid",role:"employee",password:passwordB,deliveryMode:"email"
+   },201,{env:config});
+   assert.equal(staff.token,undefined);
+   assert.equal(staff.emailSubmitted,true);
+   assert.equal(sent.length,2);
+   assert.ok(sent[1].text.includes("/#staff="));
+   await expectStatus(db,b,"POST","/api/staff/invitations/"+staff.id+"/revoke",{password:passwordB},200,{env:config});
+  }finally{globalThis.fetch=oldFetch;}
+ });
+ await t.test("provider refusal revokes attempted email invitations",async()=>{
+  const config={
+   EMAIL_DELIVERY_MODE:"resend",RESEND_API_KEY:"testing-provider-key-not-real",
+   RESEND_FROM:"test@nexus.example.org",RESEND_SENDER_DOMAIN_VERIFIED:"true",
+   PUBLIC_APP_ORIGIN:"https://crm.nexus.example.org"
+  };
+  const oldFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(JSON.stringify({error:"rejected"}),{status:503,headers:{"Content-Type":"application/json"}});
+  try{
+   await expectStatus(db,a,"POST","/api/platform/invitations",{
+    companyName:"Provider Refused",email:"refused-owner@example.invalid",password:passwordA,deliveryMode:"email"
+   },503,{env:config});
+   const q=db.raw.prepare("SELECT count(*) AS n FROM company_invitations WHERE owner_email='refused-owner@example.invalid' AND revoked_at IS NOT NULL").get();
+   assert.equal(q.n,1);
+   const aBefore=db.raw.prepare("SELECT count(*) AS n FROM staff_invitations WHERE email='refused-staff@example.invalid' AND revoked_at IS NOT NULL").get().n;
+   await expectStatus(db,b,"POST","/api/staff/invitations",{
+    email:"refused-staff@example.invalid",role:"admin",password:passwordB,deliveryMode:"email"
+   },503,{env:config});
+   assert.equal(db.raw.prepare("SELECT count(*) AS n FROM staff_invitations WHERE email='refused-staff@example.invalid' AND revoked_at IS NOT NULL").get().n,aBefore+1);
+  }finally{globalThis.fetch=oldFetch;}
  });
  await t.test("company B customer, job, employee, appointment and Finance",async()=>{
   bCustomer=(await expectStatus(db,b,"POST","/api/customers",{
