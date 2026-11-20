@@ -13,6 +13,13 @@ test("business email lab is shown only inside platform Management, never sends m
  assert.match(app,/preview never sends a message or creates an invitation/);
  assert.doesNotThrow(()=>new Script(app));
 });
+test("fictional company email pilot is private and never enables normal customer sending",()=>{
+ assert.match(app,/data-form="email-invite-pilot"/);
+ assert.match(app,/request\("\/api\/platform\/email-invite-pilot"/);
+ assert.match(app,/pilotInviteAvailable/);
+ assert.match(app,/private tab/);
+ assert.doesNotThrow(()=>new Script(app));
+});
 test("existing five tabs are preserved; POS stays within Finance",()=>{
  assert.match(app,/const tabs=\["Dashboard","Customers","Operations","Finance","Management"\]/);
  assert.match(app,/const financeViews=\["Estimates","Invoices","Payments","Reports","POS"\]/);
