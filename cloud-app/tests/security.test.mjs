@@ -163,6 +163,20 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
   const listing=await expectStatus(db,a,"GET","/api/platform/companies",undefined,200);
   assert.equal(listing.items.length,2);
  });
+ await t.test("email invitation delivery fails closed when verified sender is unavailable",async()=>{
+  const before=db.raw.prepare("SELECT count(*) AS n FROM company_invitations").get().n;
+  await expectStatus(db,a,"POST","/api/platform/invitations",{
+   companyName:"Email Not Configured",email:"mail-no-send@example.invalid",password:passwordA,deliveryMode:"email"
+  },503);
+  await expectStatus(db,a,"POST","/api/platform/invitations",{
+   companyName:"Bad Delivery",email:"mail-invalid@example.invalid",password:passwordA,deliveryMode:"external"
+  },400);
+  assert.equal(db.raw.prepare("SELECT count(*) AS n FROM company_invitations").get().n,before);
+  await expectStatus(db,b,"POST","/api/staff/invitations",{
+   email:"staff-no-send@example.invalid",role:"employee",password:passwordB,deliveryMode:"email"
+  },503);
+  assert.equal(db.raw.prepare("SELECT count(*) AS n FROM staff_invitations").get().n,0);
+ });
  await t.test("company B customer, job, employee, appointment and Finance",async()=>{
   bCustomer=(await expectStatus(db,b,"POST","/api/customers",{
    name:"Beta QA Customer",email:"beta@example.invalid",phone:"",notes:""
