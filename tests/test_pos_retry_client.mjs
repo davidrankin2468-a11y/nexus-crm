@@ -9,7 +9,7 @@ const to=code.indexOf("async function loadPos()",from);
 assert.ok(from>0&&to>from,"CRM POS retry functions must exist");
 const helpers=code.slice(from,to);
 
-function harness({failFirst=true,blockStorage=false}={}){
+function harness({failFirst=true,blockStorage=false,confirmedReceipt={id:"confirmed-sale-1",status:"pending",duplicate:false}}={}){
  const entries=new Map(),attempts=[],notices=[];
  let counter=0;
  const s={account:{company:"Test Company A",email:"owner@example.invalid"},posCart:{"product-1":2},posBusy:false};
@@ -21,7 +21,7 @@ function harness({failFirst=true,blockStorage=false}={}){
    removeItem(key){entries.delete(key)}
   },
   crypto:{randomUUID(){counter++;return "checkout-"+counter+"-unique-ref"}},
-  async request(path,method,attempt){attempts.push(JSON.parse(JSON.stringify(attempt)));if(reject){reject=false;throw Error("network timeout")}return {id:"confirmed-sale-1"}},
+  async request(path,method,attempt){attempts.push(JSON.parse(JSON.stringify(attempt)));if(reject){reject=false;throw Error("network timeout")}return confirmedReceipt},
   async loadPos(){},
   draw(){},
   notice(value){notices.push(value)}
@@ -60,4 +60,19 @@ test("if pending storage is disabled the checkout refuses to send anything",asyn
  assert.equal(x.attempts.length,0);
  assert.equal(x.s.posCart["product-1"],2);
  assert.ok(x.notices.some(s=>s.includes("Safe checkout storage is unavailable")));
+});
+
+test("a recovered completed sale reports already completed, not pending or unpaid",async()=>{
+ const x=harness({failFirst:false,confirmedReceipt:{id:"previous-sale-1",status:"completed",duplicate:true}});
+ await x.ctx.posCommit();
+ assert.equal(x.attempts.length,1);
+ assert.equal(x.entries.size,0);
+ assert.ok(x.notices.some(m=>m.includes("already completed")));
+ assert.ok(x.notices.every(m=>!m.includes("pending/unpaid")));
+});
+test("a recovered voided sale reports already voided and creates no new attempt",async()=>{
+ const x=harness({failFirst:false,confirmedReceipt:{id:"previous-sale-2",status:"voided",duplicate:true}});
+ await x.ctx.posCommit();
+ assert.equal(x.attempts.length,1);
+ assert.ok(x.notices.some(m=>m.includes("already voided")));
 });
