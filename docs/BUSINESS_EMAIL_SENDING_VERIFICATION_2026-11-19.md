@@ -3,6 +3,14 @@
 **Checked:** November 19, 2026, America/Chicago.  
 **State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
 
+## Outbound fetch-context fix — November 20, 2026
+
+- Owner's next Resend self-test showed **`DELIVERY_UNAVAILABLE`**, which means the Worker caught a thrown network/transport exception before obtaining an HTTP response. The old logic used a default argument `fetcher=fetch` and called it as an unbound function. In Cloudflare Workers, this can raise a runtime **Illegal invocation** due to the detached global fetch receiver. This is a **likely root cause** based on runtime behavior, not direct evidence from the original uncaptured exception.
+- Updated both isolated self-test and future invite transport defaults to `fetcher=(...args)=>globalThis.fetch(...args)`, preserving the bound global receiver while keeping injected test transports and 12-second timeout. Added an offline regression test simulating a strict receiver that rejects detached `fetch`.
+- [Full CRM/POS automated tests](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44689046892) passed. Safely deployed integrated Worker version `ce2a4271-95ee-4db3-b307-1ee9a300990c` with **all 13 bindings inherited**, all 7 modules retained, and `EMAIL_DELIVERY_MODE=disabled`. Reran [live preview smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44689000360), which **passed** after deployment.
+- Cloudflare D1 integrity check returned `ok`, old throttle already expired, `RESEND_API_KEY` remains protected as a secret, and R2 midnight backup crons stayed unchanged. **No real email was sent by this deployment.**
+- **Next:** Owner should click **Management → Companies → Business Email Lab → Send one test to my email** once and confirm whether it reaches their personal Gmail inbox. If still unsuccessful, use the updated safe status category; do not rotate credentials without evidence.
+
 ## First outbound self-test rejected — safe diagnostics deployed, November 20, 2026
 
 - Owner reported the first self-test returned a generic failure from Resend. **The original provider HTTP status/body was not captured by our API**, so there is no confirmed root cause. Resend domain verified and API secret is present, but these do not prove API key correctness or domain permission.
