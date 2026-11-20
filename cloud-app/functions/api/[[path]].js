@@ -1,4 +1,4 @@
-import {invitationMailReadiness,sendInvitationEmail,freeInvitationEmailLab} from "./invitation-mailer.js";
+import {invitationMailReadiness,sendInvitationEmail,freeInvitationEmailLab,sendSelfTestEmail} from "./invitation-mailer.js";
 // Nexus CRM cloud alpha API. Deployed with Cloudflare Pages Functions; no secrets in source.
 const ITERS=100000, WEEK=604800, STATUSES=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
 const H={"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer","X-Frame-Options":"DENY","Strict-Transport-Security":"max-age=31536000","Cross-Origin-Resource-Policy":"same-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(), payment=()","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"};
@@ -933,6 +933,25 @@ async function handler(request,env){
  }
  // A read-only, zero-cost preview. No email transport, invitation token,
  // customer address, or database mutation is exposed here.
+ // Self-addressed connectivity test only: private platform owner + CSRF and
+ // password verified. No customer recipient field and no invitation created.
+ // Email sending to customers remains controlled separately by EMAIL_DELIVERY_MODE.
+ if(path==="/api/platform/email-self-test"&&method==="POST"){
+  if(env.EMAIL_SELF_TEST_ENABLED!=="true"||!invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready)
+   return error("Business email self-test is not configured",503);
+  const input=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,input.password)))return error("Incorrect account password",403);
+  const next=now()+1800;
+  const permit=await db.prepare(`INSERT INTO email_self_test_limits(user_id,next_allowed_at) VALUES(?,?)
+   ON CONFLICT(user_id) DO UPDATE SET next_allowed_at=excluded.next_allowed_at
+   WHERE email_self_test_limits.next_allowed_at <= ?`).bind(user.user_id,next,now()).run();
+  if(permit.meta?.changes!==1)return error("Only one email connection test every 30 minutes",429);
+  const sent=await sendSelfTestEmail({env,email:user.email});
+  await logAudit(db,user,path,"POST");
+  if(!sent.sent)return error("Resend did not accept the test message. Check sender and API permissions.",502);
+  return response({ok:true,providerAccepted:true,delivered:false,recipient:user.email,
+   message:"Resend accepted the test email. Check your inbox or spam; delivery is not yet confirmed."});
+ }
  if(path==="/api/platform/email-lab"&&method==="GET"){
   return response(freeInvitationEmailLab(env));
  }
