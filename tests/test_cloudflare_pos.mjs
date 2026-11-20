@@ -85,8 +85,16 @@ test("insufficient inventory prevents sale",async()=>{
  assert.equal(r.response.status,409);assert.equal(r.db.batches.length,0);
 });
 test("same idempotency key returns prior receipt",async()=>{
- const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"key-number-003",tax_cents:0,items:[{product_id:"p1",quantity:1}]},options:{duplicate:{id:"receipt-prior",total_cents:250}}});
+ const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"key-number-003",tax_cents:0,items:[{product_id:"p1",quantity:1}]},options:{duplicate:{id:"receipt-prior",total_cents:250,status:"pending"}}});
  assert.equal(r.response.status,200);assert.equal(r.data.duplicate,true);assert.equal(r.db.batches.length,0);
+});
+test("retry of a completed sale retains paid lifecycle status and cannot create a second sale",async()=>{
+ const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"key-completed-001",tax_cents:0,items:[{product_id:"p1",quantity:1}]},options:{duplicate:{id:"completed-original",total_cents:250,status:"completed"}}});
+ assert.equal(r.response.status,200);
+ assert.equal(r.data.duplicate,true);
+ assert.equal(r.data.status,"completed");
+ assert.equal(r.data.payment_charged,false);
+ assert.equal(r.db.batches.length,0);
 });
 test("sale writes are batched and scoped to session tenant",async()=>{
  const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"key-number-004",tax_cents:0,items:[{product_id:"p1",quantity:2}]}});
