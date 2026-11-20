@@ -19,7 +19,7 @@ test("Cloudflare free email preview never sends or exposes tokens, keys or real 
  assert.equal(lab.senderConfiguredInCRM,false);
  assert.equal(lab.sample.to,"example-recipient@example.invalid");
  assert.ok(lab.sample.body.includes("This is a preview"));
- assert.ok(lab.sample.body.includes("\\n"));
+ assert.ok(lab.sample.body.includes("\n"));
  assert.ok(!JSON.stringify(lab).includes("secret-that-must-not-appear"));
  assert.ok(!JSON.stringify(lab).includes("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
  const configured=freeInvitationEmailLab(safeEnv);
