@@ -3,6 +3,15 @@
 **Checked:** November 19, 2026, America/Chicago.  
 **State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
 
+## Confirmed Cloudflare runtime request-construction bug — November 20, 2026
+
+- After the fetch-receiver fix, the owner reported **DELIVERY_UNAVAILABLE** again. Cloudflare observability confirmed an HTTP 502 from the self-test route, but the outbound exception text was previously caught and not retained. No proof of provider-side rejection.
+- The mail module still used `redirect:"error"` in **both** the owner self-test and normal invitation send functions. Cloudflare's official [Workers Request reference](https://developers.cloudflare.com/workers/runtime-apis/request/) explicitly states `error` redirect mode is **not supported**: constructing `Request` with it throws a `TypeError` **before any outbound request is sent**. This code-level incompatibility independently explains the persistent `DELIVERY_UNAVAILABLE` errors, without implicating the Resend API key or domain.
+- Replaced both instances with `redirect:"manual"`, the Cloudflare-supported policy that returns 3xx rather than following redirects and forwarding the `Authorization` credential. Provider 3xx responses are treated as rejected, never as accepted.
+- Added regression tests asserting both mail paths use `manual` and do not accept redirect responses. [Full CRM/POS tests](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44690048968) passed. Published updated seven-module Worker version `2a32e478-0090-4fea-9d36-1bd7f085ef37`. Reran [live smoke checks](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44689993046) **successfully after deployment**.
+- All 13 Worker bindings, `RESEND_API_KEY` secrecy, `EMAIL_DELIVERY_MODE=disabled`, `EMAIL_SELF_TEST_ENABLED=true`, D1 integrity `ok` and midnight R2 backup cron entries are unchanged. The self-test cooldown is expired.
+- **Owner action remains:** Use the private **Management → Companies → Business Email Lab** button once more and confirm if the message is accepted and delivered in Gmail. A live Resend send has **not yet been demonstrated** after this correction; do not enable customer email or live payments based only on local and smoke tests.
+
 ## Outbound fetch-context fix — November 20, 2026
 
 - Owner's next Resend self-test showed **`DELIVERY_UNAVAILABLE`**, which means the Worker caught a thrown network/transport exception before obtaining an HTTP response. The old logic used a default argument `fetcher=fetch` and called it as an unbound function. In Cloudflare Workers, this can raise a runtime **Illegal invocation** due to the detached global fetch receiver. This is a **likely root cause** based on runtime behavior, not direct evidence from the original uncaptured exception.
