@@ -124,7 +124,7 @@ test("client-provided tax is rejected until calculation and collection are imple
  assert.equal(r.db.batches.length,0);
 });
 test("duplicate checkout response explicitly says pending and unpaid",async()=>{
- const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"retry-idem-01",tax_cents:0,items:[{product_id:"p1",quantity:1}]},options:{duplicate:{id:"prior-01",total_cents:250}}});
+ const r=await call("/api/pos/sales",{method:"POST",body:{idempotency_key:"retry-idem-01",tax_cents:0,items:[{product_id:"p1",quantity:1}]},options:{duplicate:{id:"prior-01",total_cents:250,status:"pending"}}});
  assert.equal(r.response.status,200);
  assert.equal(r.data.duplicate,true);
  assert.equal(r.data.payment_charged,false);
