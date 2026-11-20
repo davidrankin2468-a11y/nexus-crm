@@ -41,6 +41,8 @@ jobs:
         run: node --test tests/test_vercel_pos.mjs tests/test_vercel_pos_auth.mjs tests/test_square_sandbox.mjs tests/test_square_connectivity.mjs tests/test_square_payment_transport.mjs tests/test_square_attempt.mjs tests/test_square_prepare_route.mjs tests/test_square_submit_attempt.mjs tests/test_square_verify_payment.mjs tests/test_square_reconcile_route.mjs
       - name: Live preview payment-disabled and anonymous-access release gate (no credentials)
         run: node --test tests/test_release_readiness_live.mjs
+      - name: Two-provider customer launch safeguards (no live charges)
+        run: node --test tests/test_customer_payment_launch_gates.mjs
       - name: Main CRM browser JavaScript syntax
         run: node --check cloud-app/public/assets/app.js
       - name: CRM and POS shared-navigation security assertions
