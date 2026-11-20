@@ -29,10 +29,11 @@ jobs:
         run: node --test tests/test_pos_retry_client.mjs
       - name: Encrypted CRM backup round-trip and tamper rejection
         run: node --test cloud-app/tests/backup-crypto.test.mjs
-      - name: Private R2 scheduled backup encryption and readback tests
+      - name: Private R2 scheduled backup encryption, full restore and readback tests
         run: |
           node --check cloudflare/nexus-crm-pos-r2-backup-worker.js
-          node --test tests/test_r2_backup_worker.mjs
+          node --check cloudflare/nexus-r2-isolated-restore-drill.js
+          node --test tests/test_r2_backup_worker.mjs tests/test_r2_actual_archive_restore.mjs
       - name: Square Sandbox, webhook, payment reconciliation and refund regressions
         run: |
           node --test tests/cloudflare-square-connectivity.test.mjs tests/cloudflare-square-reconciliation.test.mjs tests/cloudflare-square-refund-verification.test.mjs
