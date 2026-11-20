@@ -45,6 +45,8 @@ export async function restoreActualEncryptedArchive(env){
  if(data?.format!==FORMAT||data?.schemaVersion!==1||data?.sourceDatabase!=="nexus_crm_full_staging"||
     !data?.records||!Array.isArray(data?.schema))throw Error("Snapshot format or source invalid");
  const tables=data.schema.filter(s=>s.type==="table"),other=data.schema.filter(s=>s.type!=="table");
+ const indexes=other.filter(s=>s.type==="index");
+ const postDataObjects=other.filter(s=>s.type!=="index");
  if(tables.length<15||tables.length>80||new Set(tables.map(x=>x.name)).size!==tables.length)
   throw Error("Snapshot table inventory invalid");
  if(!tables.some(t=>t.name==="tenants")||!tables.some(t=>t.name==="users")||!tables.some(t=>t.name==="pos_sales"))
@@ -61,6 +63,9 @@ export async function restoreActualEncryptedArchive(env){
  // D1.exec() splits SQL on newlines, which breaks formatted CREATE TABLE DDL.
  // D1.prepare().run() executes each complete multiline SQLite DDL statement.
  for(const t of tables)await env.RECOVERY_DB.prepare(t.sql).run();
+ // Composite foreign keys can reference UNIQUE indexes rather than a table
+ // constraint; install every index before inserting dependent child records.
+ for(const index of indexes)await env.RECOVERY_DB.prepare(index.sql).run();
  const writes=[env.RECOVERY_DB.prepare("PRAGMA defer_foreign_keys=ON")];
  for(const t of tables){
   const rows=data.records[t.name];
@@ -76,7 +81,9 @@ export async function restoreActualEncryptedArchive(env){
  }
  // D1.batch is transactional. Deferred FK checks execute at commit.
  await env.RECOVERY_DB.batch(writes);
- for(const s of other)await env.RECOVERY_DB.prepare(s.sql).run();
+ // Triggers must be installed after archived data is loaded to avoid replaying
+ // business side effects and changing the authenticated snapshot row totals.
+ for(const obj of postDataObjects)await env.RECOVERY_DB.prepare(obj.sql).run();
  const ok=await env.RECOVERY_DB.prepare("PRAGMA quick_check").first();
  if(ok?.quick_check!=="ok")throw Error("Restored D1 quick_check failed");
  const fk=await env.RECOVERY_DB.prepare("PRAGMA foreign_key_check").all();
