@@ -17,7 +17,7 @@ const migrations = [
  "002_employees_appointments.sql","003_finance.sql","004_recovery_audit.sql",
  "005_platform_operator.sql","006_company_invitations.sql","007_staff_invitations.sql",
  "008_account_recovery_codes.sql","009_staff_deactivation.sql","010_totp_mfa.sql",
- "015_invitation_delivery_provenance.sql"
+ "015_invitation_delivery_provenance.sql","016_email_self_test_limits.sql"
 ];
 function memoryDB(){
  const raw = new DatabaseSync(":memory:");
@@ -177,6 +177,39 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
   assert.ok(lab.sample.body.includes("This is a preview"));
   assert.ok(!JSON.stringify(lab).includes("secret"));
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n,before);
+ });
+ await t.test("owner-only self email test cannot be used for customer invitations",async()=>{
+  const secret="local-fake-resend-credential-not-production";
+  const env={EMAIL_SELF_TEST_ENABLED:"true",EMAIL_DELIVERY_MODE:"disabled",
+   RESEND_API_KEY:secret,RESEND_FROM:"notifications@nexussoftwareusa.com",
+   RESEND_SENDER_DOMAIN_VERIFIED:"true",PUBLIC_APP_ORIGIN:"https://qa.nexus.example.org"};
+  const countBefore=db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n;
+  await expectStatus(db,null,"POST","/api/platform/email-self-test",{password:passwordA},401,{env});
+  await expectStatus(db,b,"POST","/api/platform/email-self-test",{password:passwordB},403,{env});
+  await expectStatus(db,a,"POST","/api/platform/email-self-test",{password:passwordA},403,{env,noCsrf:true});
+  await expectStatus(db,a,"POST","/api/platform/email-self-test",{password:passwordA},503,{env:{...env,EMAIL_SELF_TEST_ENABLED:"false"}});
+  await expectStatus(db,a,"POST","/api/platform/email-self-test",{password:"wrong"},403,{env});
+  let externalCalls=0;
+  const saved=globalThis.fetch;
+  try{
+   globalThis.fetch=async (url,opts)=>{
+    externalCalls++;
+    assert.equal(url,"https://api.resend.com/emails");
+    assert.equal(opts.headers.Authorization,"Bearer "+secret);
+    const msg=JSON.parse(opts.body);
+    assert.deepEqual(msg.to,[emailA],"Self-test must be restricted to authenticated operator email");
+    assert.ok(!JSON.stringify(msg).includes("/#invite="));
+    return {ok:true,json:async()=>({id:"accepted-self-test-in-ci"})};
+   };
+   const accepted=await expectStatus(db,a,"POST","/api/platform/email-self-test",{password:passwordA},200,{env});
+   assert.equal(accepted.providerAccepted,true);
+   assert.equal(accepted.delivered,false);
+   assert.equal(accepted.recipient,emailA);
+   await expectStatus(db,a,"POST","/api/platform/email-self-test",{password:passwordA},429,{env});
+   assert.equal(externalCalls,1);
+   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n,countBefore);
+   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM email_self_test_limits").get().n,1);
+  }finally{globalThis.fetch=saved;}
  });
  await t.test("email invitation delivery fails closed when verified sender is unavailable",async()=>{
   const before=db.raw.prepare("SELECT count(*) AS n FROM company_invitations").get().n;
