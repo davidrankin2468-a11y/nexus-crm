@@ -1,7 +1,15 @@
 # Nexus Software Solutions — transactional business email verification
 
 **Checked:** November 19, 2026, America/Chicago.  
-**State:** DOMAIN REGISTERED; OUTBOUND PROVIDER VERIFICATION PENDING. No real outbound send has been performed; customer onboarding remains a private test pilot.
+**State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
+
+## Resend domain verified — owner confirmation, November 19, 2026
+
+- The owner supplied a screenshot of the Resend domain dashboard showing `nexussoftwareusa.com` status **Verified**, `Resend Forge` **Ready**, and the event **Domain verified: Your domain is ready to send emails**.
+- Cloudflare DNS already contains the Resend sending CNAME and DKIM records. Cloudflare inbound routing to Gmail remains separate.
+- **Important:** The CRM's Cloudflare Worker still has no `RESEND_API_KEY`, `EMAIL_DELIVERY_MODE`, `RESEND_FROM`, `RESEND_SENDER_DOMAIN_VERIFIED`, or `PUBLIC_APP_ORIGIN` binding configured. Business email sending from Nexus CRM is therefore **NOT yet live**.
+- Next required action: owner creates a scoped Resend sending API key in Resend and installs it directly as a protected secret in the Cloudflare Worker settings (never in chat, source code, or logs). Following that, configure sender and HTTPS origin, deploy without disturbing existing bindings, and test to a mailbox the owner controls. Do not enable public onboarding or real payments.
+- The user's screenshot establishes provider dashboard readiness, **not successful message delivery**, endpoint authentication, email ownership confirmation, or production approval.
 
 ## Latest domain and preview status — November 19, 2026, Central time
 
