@@ -197,6 +197,14 @@ async function platformOperator(db,user){
  if(user.role!=="owner")return false;
  return !!(await first(db,"SELECT user_id FROM platform_operators WHERE user_id=?",user.user_id));
 }
+// Safely direct a fictional pilot company invitation only to the platform
+// operator's existing Gmail inbox via Google's plus-alias addresses.
+function pilotOwnerAlias(ownerEmail,suffix){
+ const lower=String(ownerEmail||"").toLowerCase(),parts=lower.split("@");
+ if(parts.length!==2||parts[1]!=="gmail.com"||!(/^[a-z0-9][a-z0-9._-]{1,60}$/).test(parts[0])||parts[0].includes("+"))return null;
+ if(!/^[a-z0-9-]{5,38}$/.test(suffix))return null;
+ return parts[0]+"+nexus-test-"+suffix+"@gmail.com";
+}
 async function inviteRateLimit(db,request,invalid=false){
  const key=await hash("company-invite|"+(request.headers.get("CF-Connecting-IP")||"unknown"));
  if(await throttled(db,key))return false;
@@ -936,6 +944,41 @@ async function handler(request,env){
  // Self-addressed connectivity test only: private platform owner + CSRF and
  // password verified. No customer recipient field and no invitation created.
  // Email sending to customers remains controlled separately by EMAIL_DELIVERY_MODE.
+ // A separate, tightly scoped onboarding acceptance test. Never turns on
+ // standard customer email delivery; recipient cannot be supplied by client.
+ if(path==="/api/platform/email-invite-pilot"&&method==="POST"){
+  const pilotEnv={...env,EMAIL_DELIVERY_MODE:"resend"};
+  if(env.EMAIL_INVITATION_PILOT_ENABLED!=="true"||env.EMAIL_DELIVERY_MODE!=="disabled"||!invitationMailReadiness(pilotEnv).ready)
+   return error("Pilot invitation email not configured",503);
+  const input=await readJson(request);
+  if(!(await verifySensitivePassword(db,user,input.password)))return error("Incorrect account password",403);
+  const suffix=now().toString(36)+"-"+crypto.randomUUID().slice(0,8);
+  const email=pilotOwnerAlias(user.email,suffix);
+  if(!email)return error("Pilot invitation requires a platform owner with a standard Gmail address",400);
+  const active=await first(db,`SELECT COUNT(*) AS n FROM company_invitations
+    WHERE created_by=? AND company_name LIKE 'Nexus Email Pilot QA %'
+     AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,user.user_id,now());
+  if(active?.n>=3)return error("Pilot invitation limit reached; accept or revoke an existing pilot invitation first",409);
+  const throttle=now()+1800;
+  const permit=await db.prepare(`INSERT INTO email_self_test_limits(user_id,next_allowed_at) VALUES(?,?)
+   ON CONFLICT(user_id) DO UPDATE SET next_allowed_at=excluded.next_allowed_at
+   WHERE email_self_test_limits.next_allowed_at<=?`).bind(user.user_id,throttle,now()).run();
+  if(permit.meta?.changes!==1)return error("Only one outbound email pilot test every 30 minutes",429);
+  const company="Nexus Email Pilot QA "+suffix;
+  const token=secret(),id=crypto.randomUUID(),t=now(),expiresAt=t+INVITE_LIFETIME;
+  await db.prepare("INSERT INTO company_invitations(id,company_name,owner_email,token_hash,created_by,created_at,expires_at,delivery_mode) VALUES(?,?,?,?,?,?,?,?)")
+   .bind(id,company,email,await hash(token),user.user_id,t,expiresAt,"email").run();
+  const result=await sendInvitationEmail({env:pilotEnv,email,companyName:company,token,kind:"company"});
+  if(!result.sent){
+   await db.prepare("UPDATE company_invitations SET revoked_at=? WHERE id=? AND revoked_at IS NULL AND redeemed_at IS NULL").bind(now(),id).run();
+   await db.prepare("UPDATE email_self_test_limits SET next_allowed_at=? WHERE user_id=? AND next_allowed_at=?").bind(now()+120,user.user_id,throttle).run();
+   return error("Resend did not accept the pilot invitation; invitation revoked",502);
+  }
+  await logAudit(db,user,path,"POST");
+  return response({ok:true,pilotOnly:true,emailSubmitted:true,providerAccepted:true,delivered:false,
+   id,email,companyName:company,expiresAt,
+   message:"Pilot invitation submitted to your Gmail inbox. Open the link in a private browser tab to test one-time activation."},201);
+ }
  if(path==="/api/platform/email-self-test"&&method==="POST"){
   if(env.EMAIL_SELF_TEST_ENABLED!=="true"||!invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready)
    return error("Business email self-test is not configured",503);
@@ -970,7 +1013,10 @@ async function handler(request,env){
    message:"Resend accepted the test email. Check your inbox or spam; delivery is not yet confirmed."});
  }
  if(path==="/api/platform/email-lab"&&method==="GET"){
-  return response(freeInvitationEmailLab(env));
+  const lab=freeInvitationEmailLab(env);
+  const pilotReady=env.EMAIL_INVITATION_PILOT_ENABLED==="true"&&env.EMAIL_DELIVERY_MODE==="disabled"
+   &&invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready&&Boolean(pilotOwnerAlias(user.email,"sample"));
+  return response({...lab,pilotInviteAvailable:pilotReady});
  }
  if(path==="/api/platform/invitations"&&method==="GET"){
   const items=await all(db,`SELECT id,company_name AS companyName,owner_email AS email,created_at AS createdAt,
