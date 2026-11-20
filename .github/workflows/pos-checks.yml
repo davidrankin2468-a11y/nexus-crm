@@ -47,6 +47,10 @@ jobs:
         run: node --test tests/test_crm_pos_navigation.mjs
       - name: Existing Cloudflare CRM login, RBAC and tenant security regression
         run: node --test cloud-app/tests/security.test.mjs
+      - name: Cloudflare integrated Square-aware POS adapter parity
+        run: |
+          node --check cloudflare/nexus-pos-integrated-worker-module.js
+          node --test tests/test_integrated_worker_module.mjs
       - name: POS API JavaScript syntax
         run: node --check 'cloud-app/functions/api/pos/[[path]].js'
       - name: POS browser JavaScript syntax
