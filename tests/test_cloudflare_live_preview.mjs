@@ -81,6 +81,17 @@ test("private Gmail-alias invitation test cannot be sent anonymously",async()=>{
  assert.match(app.text,/data-form="email-invite-pilot"/);
  assert.match(app.text,/pilotInviteAvailable/);
 });
+test("private fictional staff pilot cannot send an email anonymously",async()=>{
+ const {response}=await get("/api/staff/email-invite-pilot",{
+  method:"POST",headers:{"Content-Type":"application/json","Origin":base},
+  body:JSON.stringify({role:"employee",email:"outsider@example.invalid",password:"invalid"})
+ });
+ assert.equal(response.status,401);
+ const app=await get("/assets/app.js");
+ assert.equal(app.response.status,200);
+ assert.match(app.text,/data-form="staff-email-pilot"/);
+ assert.match(app.text,/staffPilotAvailable/);
+});
 test("anonymous POST to POS cannot write a sale or run a payment",async()=>{
  const {response}=await get("/api/pos/sales",{
   method:"POST",headers:{"Content-Type":"application/json","Origin":base},
