@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,licenseInfo:null,licenseError:"",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,licenseInfo:null,licenseError:"",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",emailLab:null,emailLabError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -480,6 +480,19 @@ async function verifyLocalEncryptedBackup(file,passphrase){
  return {createdAt:parsed.createdAt,company:parsed.company,counts:Object.fromEntries(keys.map(k=>[k,parsed.records[k].length]))};
 }
 
+function companyEmailLabContent(){
+ if(!s.account?.isPlatformOperator)return "";
+ if(s.emailLabError)return panel("Business email lab · preview only",'<p>'+safe(s.emailLabError)+'</p>');
+ if(!s.emailLab)return panel("Business email lab · preview only","<p>Checking the private email preview…</p>");
+ const sample=s.emailLab.sample||{};
+ return panel("Business email lab · preview only",
+  '<p class="panel-note">Your NexusSoftwareUSA.com domain is registered. Resend sender verification and the actual delivery test are separate steps. This preview never sends a message or creates an invitation.</p>'+
+  '<p><strong>CRM sender:</strong> '+safe(s.emailLab.status||"Not connected")+'</p>'+
+  '<p><strong>Example subject:</strong> '+safe(sample.subject||"")+'</p>'+
+  '<p><strong>Recipient:</strong> '+safe(sample.to||"")+'</p>'+
+  '<div class="hint" style="white-space:pre-wrap">'+safe(sample.body||"")+'</div>'+
+  '<p class="muted">Illustrative text only: no real recipient, token, outgoing mail, or payment.</p>');
+}
 function companyAccessContent(){
  if(!s.account?.isPlatformOperator)return panel("Access denied","<p>Company enrollment is managed by the Nexus platform operator only.</p>");
  if(s.onboardingError)return panel("Company onboarding needs attention",'<p>'+safe(s.onboardingError)+'</p><p>Reload the data to try again. Existing company records are unaffected.</p>');
@@ -513,7 +526,7 @@ function companyAccessContent(){
   '<p class="panel-note">Send the invitation privately. Do not onboard actual businesses yet.</p>')+
   oneTime+
   panel("Company invitations · "+s.companyInvites.length,table(["Company","Invited owner","Status","Expires","Action"],invites))+
-  panel("Companies · "+s.companies.length,table(["Company","Owner account","Users","Customers","Jobs"],companies));
+  panel("Companies · "+s.companies.length,table(["Company","Owner account","Users","Customers","Jobs"],companies))+companyEmailLabContent();
 }
 
 function mfaPanel(){
@@ -795,7 +808,8 @@ async function refresh(){
  const staffLoad=owner?Promise.all([request("/api/staff/users"),request("/api/staff/invitations")])
   .then(([users,invitations])=>({users,invitations})):Promise.resolve(null);
  const mfaLoad=request("/api/security/mfa/status");
- const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad,staffLoad,mfaLoad]);
+ const emailLabLoad=platform?request("/api/platform/email-lab"):Promise.resolve(null);
+ const outcomes=await Promise.allSettled([coreLoad,financeLoad,managementLoad,leadsLoad,companiesLoad,staffLoad,mfaLoad,emailLabLoad]);
  if(seq!==refreshNumber)return;
  if(outcomes[0].status==="rejected")throw outcomes[0].reason;
  const core=outcomes[0].value;
@@ -825,6 +839,9 @@ async function refresh(){
    if(companyData.status==="fulfilled"){
     s.companyInvites=companyData.value.invitations.items;s.companies=companyData.value.companies.items;s.onboardingError="";
    }else{s.onboardingError=companyData.reason?.message||"Unable to load company onboarding";}
+   const email=outcomes[7];
+   if(email.status==="fulfilled"){s.emailLab=email.value;s.emailLabError="";}
+   else{s.emailLab=null;s.emailLabError="Unable to load the safe email preview";}
   }
  }
  draw();
