@@ -28,6 +28,28 @@ test("Cloudflare free email preview never sends or exposes tokens, keys or real 
  assert.equal(configured.productionEmailReady,false);
 });
 
+test("Cloudflare global fetch retains its receiver when used by both mail transports",async()=>{
+ // In Workers, detaching the global fetch method can raise Illegal invocation.
+ // Simulate that runtime invariant without any real network request.
+ const original=globalThis.fetch;
+ const visited=[];
+ try{
+  globalThis.fetch=function(url,opts){
+   assert.equal(this,globalThis,"fetch must be called as a global method");
+   assert.equal(url,"https://api.resend.com/emails");
+   assert.equal(opts.method,"POST");
+   visited.push(JSON.parse(opts.body));
+   return Promise.resolve({ok:true,json:async()=>({id:"accepted-via-bound-global-fetch"})});
+  };
+  const env={...safeEnv,EMAIL_DELIVERY_MODE:"disabled",EMAIL_SELF_TEST_ENABLED:"true"};
+  assert.deepEqual(await sendSelfTestEmail({env,email:"person@example.org"}),{sent:true,reason:"PROVIDER_ACCEPTED"});
+  assert.deepEqual(await sendInvitationEmail(create()),{sent:true,reason:"PROVIDER_ACCEPTED"});
+  assert.equal(visited.length,2);
+  assert.ok(!JSON.stringify(visited[0]).includes(token),"Self-test must not include invitation token");
+  assert.ok(JSON.stringify(visited[1]).includes(token),"Invitation uses its one-time token only after normal sending is separately enabled");
+ }finally{globalThis.fetch=original;}
+});
+
 test("owner-only connection test is explicit and does not use invitation tokens",async()=>{
  let calls=0;
  const selfEnv={...safeEnv,EMAIL_DELIVERY_MODE:"disabled",EMAIL_SELF_TEST_ENABLED:"true"};
