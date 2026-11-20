@@ -40,12 +40,14 @@ export function invitationMailReadiness(env={}){
 // Contains NO real email address, invitation token, provider secret, or executable link.
 export function freeInvitationEmailLab(env={}){
  const ready=invitationMailReadiness(env);
+ const selfReady=env.EMAIL_SELF_TEST_ENABLED==="true"&&invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready;
  return Object.freeze({
   mode:"cloudflare_free_preview",
   sendAvailable:false,
   emailSent:false,
   realInvitationCreated:false,
   senderConfiguredInCRM:ready.providerConfigured,
+  selfTestAvailable:selfReady,
   productionEmailReady:false,
   status:ready.providerConfigured?"Sender configured in CRM; final delivery tests still required":"CRM outbound sender not connected yet; confirm Resend domain verification separately",
   sample:Object.freeze({
@@ -60,6 +62,38 @@ export function freeInvitationEmailLab(env={}){
    "Test sending only to a verified inbox you control before enabling customer invitations"
   ])
  });
+}
+
+// This route exists ONLY for the private operator's own account email.
+// It does not use a live invitation token and does not change normal email
+// onboarding rollout state. The API checks operator, password and throttle.
+export async function sendSelfTestEmail({env={},email,fetcher=fetch}={}){
+ const ready=env.EMAIL_SELF_TEST_ENABLED==="true"
+   &&invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready;
+ if(!ready)return {sent:false,reason:"SELF_TEST_NOT_CONFIGURED"};
+ if(typeof email!=="string"||email.length>254||!address.test(email))
+  return {sent:false,reason:"INVALID_ACCOUNT_EMAIL"};
+ if(typeof fetcher!=="function")return {sent:false,reason:"DELIVERY_UNAVAILABLE"};
+ const body=Object.freeze({
+  from:env.RESEND_FROM,to:[email],
+  subject:"Nexus CRM email connection test",
+  text:"This is a secure test from Nexus Software Solutions. Your Nexus CRM business email sender is connected to Resend. No customer account was created, and no invitation or payment was sent. If you did not request this test, review your Nexus CRM account security.",
+  html:"<p>This is a secure email connection test from Nexus Software Solutions.</p><p>No customer account was created, and no invitation or payment was sent.</p><p>If you did not request this test, review your Nexus CRM account security.</p>"
+ });
+ let response;
+ try{
+  response=await fetcher("https://api.resend.com/emails",{
+   method:"POST",headers:{"Authorization":"Bearer "+env.RESEND_API_KEY,"Content-Type":"application/json"},
+   body:JSON.stringify(body),redirect:"error",signal:AbortSignal.timeout(12000)
+  });
+ }catch{return {sent:false,reason:"DELIVERY_UNAVAILABLE"};}
+ if(!response?.ok)return {sent:false,reason:"DELIVERY_REJECTED"};
+ try{
+  const data=await response.json();
+  if(typeof data?.id!=="string"||data.id.length<5||data.id.length>200)
+   return {sent:false,reason:"DELIVERY_UNCONFIRMED"};
+ }catch{return {sent:false,reason:"DELIVERY_UNCONFIRMED"};}
+ return {sent:true,reason:"PROVIDER_ACCEPTED"};
 }
 
 export function buildInvitationEmail({env={},email,companyName,token,kind="company"}={}){
