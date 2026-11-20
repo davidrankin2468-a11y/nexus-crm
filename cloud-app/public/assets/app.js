@@ -218,7 +218,8 @@ async function posCommit(){
   const receipt=await request("/api/pos/sales","POST",attempt);
   if(!receipt?.id)throw Error("Sale response did not contain a receipt reference");
   posPendingFinish();s.posCart={};s.posCustomerId="";await loadPos();
-  notice("Sale "+receipt.id+" recorded as pending/unpaid. No card was charged."+(s.posError?" Records could not refresh; select Refresh to retry.":""));
+  const existingTerminalSale=receipt.duplicate&&String(receipt.status||"pending")!=="pending";
+  notice((existingTerminalSale?"Existing sale "+receipt.id+" is already "+receipt.status+". This retry created no new sale or charge.":"Sale "+receipt.id+" recorded as pending/unpaid. No card was charged.")+(s.posError?" Records could not refresh; select Refresh to retry.":""));
  }catch(err){
   notice("Sale outcome not yet confirmed: "+err.message+". Retry the same pending sale to avoid a duplicate.");
  }finally{s.posBusy=false;draw()}
