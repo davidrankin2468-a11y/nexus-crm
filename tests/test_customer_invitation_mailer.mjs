@@ -50,6 +50,18 @@ test("Cloudflare global fetch retains its receiver when used by both mail transp
  }finally{globalThis.fetch=original;}
 });
 
+test("Cloudflare manual redirects prevent secret leakage and never count as provider acceptance",async()=>{
+ const privateEnv={...safeEnv,EMAIL_SELF_TEST_ENABLED:"true",EMAIL_DELIVERY_MODE:"disabled"};
+ const forbiddenRedirect=async (url,options)=>{
+  assert.equal(url,"https://api.resend.com/emails");
+  assert.equal(options.redirect,"manual","Never forward Resend credentials automatically");
+  const req=new Request(url,options);
+  assert.equal(req.redirect,"manual");
+  return {ok:false,status:302,headers:new Headers({Location:"https://untrusted.invalid/collect"})};
+ };
+ assert.deepEqual(await sendSelfTestEmail({env:privateEnv,email:"person@example.org",fetcher:forbiddenRedirect}),{sent:false,reason:"DELIVERY_REJECTED"});
+ assert.deepEqual(await sendInvitationEmail(create({fetcher:forbiddenRedirect})),{sent:false,reason:"DELIVERY_REJECTED"});
+});
 test("owner-only connection test is explicit and does not use invitation tokens",async()=>{
  let calls=0;
  const selfEnv={...safeEnv,EMAIL_DELIVERY_MODE:"disabled",EMAIL_SELF_TEST_ENABLED:"true"};
@@ -57,7 +69,7 @@ test("owner-only connection test is explicit and does not use invitation tokens"
   calls++;
   assert.equal(url,"https://api.resend.com/emails");
   assert.equal(options.method,"POST");
-  assert.equal(options.redirect,"error");
+  assert.equal(options.redirect,"manual");
   const data=JSON.parse(options.body);
   assert.deepEqual(data.to,["person@example.org"]);
   assert.equal(data.from,selfEnv.RESEND_FROM);
@@ -145,7 +157,7 @@ test("provider accepts a valid mail only via a single secure request, no token i
   count++;
   assert.equal(url,"https://api.resend.com/emails");
   assert.equal(options.method,"POST");
-  assert.equal(options.redirect,"error");
+  assert.equal(options.redirect,"manual");
   assert.equal(options.headers.Authorization,"Bearer "+safeEnv.RESEND_API_KEY);
   const body=JSON.parse(options.body);
   assert.deepEqual(body.to,["person@example.org"]);
