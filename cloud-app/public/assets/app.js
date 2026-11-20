@@ -4,7 +4,7 @@ const safe=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"
 const money=n=>Number(n||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 const tabs=["Dashboard","Customers","Operations","Finance","Management"];
 const statuses=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
-const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,licenseInfo:null,licenseError:"",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",emailLab:null,emailLabError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
+const s={account:null,csrf:"",page:"Dashboard",customers:[],jobs:[],employees:[],appointments:[],dashboard:null,editingCustomer:null,editingJob:null,editingEmployee:null,editingAppointment:null,operationsView:"Jobs",estimates:[],invoices:[],payments:[],financeReport:null,financeView:"Estimates",posProducts:[],posSales:[],posCart:{},posCustomerId:"",posView:"Checkout",posError:"",posBusy:false,licenseInfo:null,licenseError:"",editingEstimate:null,financeError:"",managementView:"Backups",backupItems:[],backupPreview:null,securitySummary:null,auditEvents:[],recoveryError:"",salesLeads:[],salesTotal:0,salesNew:0,salesError:"",companyInvites:[],companies:[],onboardingError:"",emailLab:null,emailLabError:"",newInvite:null,pendingInviteToken:"",pendingStaffToken:"",staffUsers:[],staffInvites:[],staffPilotAvailable:false,staffError:"",newStaffInvite:null,newRecoveryCodes:null,mfaStatus:null,newMfaSecret:null,mfaChallenge:null};
 // The invitation token travels only in the URL fragment (not HTTP request/log).
 // Remove it from the address bar immediately and keep it only in memory until used.
 try{
@@ -627,6 +627,13 @@ function teamAccessContent(){
   '<option value="admin">Admin · edit operations and Finance</option></select></label>'+
   '<label>Confirm your Nexus CRM password<input name="password" type="password" required autocomplete="current-password"></label>'+
   '<div class="actionrow"><button type="submit" class="primary">Create staff invitation</button></div></form>')+
+  (s.staffPilotAvailable?panel("Pilot staff email test · Gmail only",
+   '<p>After activating your fictional Nexus Email Pilot QA company, send one employee or admin invitation to a unique Gmail alias that belongs to your original Nexus owner inbox.</p>'+
+   '<form data-form="staff-email-pilot" class="gridform">'+
+   '<label>Test staff role<select name="role" required><option value="employee">Employee · read-only</option><option value="admin">Admin · edit operations and Finance</option></select></label>'+
+   '<label>Confirm pilot company owner password<input name="password" type="password" required autocomplete="current-password"></label>'+
+   '<button class="primary" type="submit">Email a test staff invitation to my Gmail</button></form>'+
+   '<p class="muted">Fictional pilot only, no customer accounts or payments. Link expires in three days and works once. Sending is limited to one test every 30 minutes.</p>'):"")+
   minted+panel("Team accounts · "+s.staffUsers.length,table(["Email","Role","Status","Created","Access"],users))+
   panel("Invitations · "+s.staffInvites.length,table(["Email","Role","Status","Action"],invites));
 }
@@ -843,7 +850,7 @@ async function refresh(){
   }else{s.recoveryError=management.reason?.message||"Unable to load recovery controls";}
   const team=outcomes[5];
   if(team.status==="fulfilled"){
-   s.staffUsers=team.value.users.items;s.staffInvites=team.value.invitations.items;s.staffError="";
+   s.staffUsers=team.value.users.items;s.staffInvites=team.value.invitations.items;s.staffPilotAvailable=Boolean(team.value.invitations.pilotStaffAvailable);s.staffError="";
   }else{s.staffError=team.reason?.message||"Unable to load team access";}
   if(platform){
    const sales=outcomes[3],companyData=outcomes[4];
@@ -1046,6 +1053,12 @@ document.addEventListener("submit",async e=>{
    if(String(data.password).length<14)throw Error("Choose a password of at least 14 characters.");
    await request("/api/staff/invitations/accept","POST",{token:s.pendingStaffToken,password:data.password});
    s.pendingStaffToken="";s.page="Dashboard";await refresh();notice("Test staff account activated.");return;
+  }
+  if(type==="staff-email-pilot"){
+   const sent=await request("/api/staff/email-invite-pilot","POST",{password:data.password,role:data.role});
+   await refresh();s.managementView="Team Access";draw();
+   notice("Resend accepted a "+sent.role+" test invitation for "+sent.email+". Check your Gmail Inbox and Spam, then activate it in a private browser tab. Delivery must still be confirmed.");
+   return;
   }
   if(type==="staff-invite"){
    const result=await request("/api/staff/invitations","POST",data);
