@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {webcrypto} from "node:crypto";
-import {createEncryptedBackup,verifyStoredBackup,collectSnapshot} from "../cloudflare/nexus-crm-pos-r2-backup-worker.js";
+import backupWorker,{createEncryptedBackup,verifyStoredBackup,collectSnapshot,isCentralMidnight} from "../cloudflare/nexus-crm-pos-r2-backup-worker.js";
 Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
 const tables=[
  "tenants","users","user_mfa","account_recovery_codes","customers","jobs","appointments",
@@ -72,4 +72,28 @@ test("partial data, internal tables or a failed D1 integrity check never produce
  }}};
  await assert.rejects(()=>createEncryptedBackup(corrupt),/failed quick_check/);
  assert.equal(objects.size,0);
+});
+
+test("UTC cron pairs select exactly local midnight in both CST and CDT",()=>{
+ const times=[
+  ["2026-11-20T05:00:00Z",false],
+  ["2026-11-20T06:00:00Z",true],
+  ["2027-07-01T05:00:00Z",true],
+  ["2027-07-01T06:00:00Z",false],
+  ["2027-03-14T05:00:00Z",false],
+  ["2027-03-14T06:00:00Z",true],
+  ["2027-11-07T05:00:00Z",true],
+  ["2027-11-07T06:00:00Z",false]
+ ];
+ for(const [value,want] of times)assert.equal(isCentralMidnight(Date.parse(value)),want,value);
+});
+test("scheduled handler skips wrong local hour, performs only the midnight backup",async()=>{
+ const {env,objects,requests}=makeEnv();
+ await backupWorker.scheduled({scheduledTime:Date.parse("2026-11-20T05:00:00Z")},env);
+ assert.equal(objects.size,0);assert.equal(requests.length,0);
+ await backupWorker.scheduled({scheduledTime:Date.parse("2026-11-20T06:00:00Z")},env);
+ assert.equal(objects.size,1);
+ const key=[...objects.keys()][0];
+ assert.match(key,/^snapshots\/v1\/2026\/11\/20\//);
+ assert.equal((await verifyStoredBackup(env,key)).verified,true);
 });
