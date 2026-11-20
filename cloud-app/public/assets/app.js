@@ -485,13 +485,20 @@ function companyEmailLabContent(){
  if(s.emailLabError)return panel("Business email lab · preview only",'<p>'+safe(s.emailLabError)+'</p>');
  if(!s.emailLab)return panel("Business email lab · preview only","<p>Checking the private email preview…</p>");
  const sample=s.emailLab.sample||{};
- return panel("Business email lab · preview only",
-  '<p class="panel-note">Your NexusSoftwareUSA.com domain is registered. Resend sender verification and the actual delivery test are separate steps. This preview never sends a message or creates an invitation.</p>'+
+ const testAction=s.emailLab.selfTestAvailable
+  ?'<form data-form="email-self-test"><p><strong>Send a connection test to your signed-in account:</strong> '+safe(s.account.email||"")+'</p>'+
+   '<label>Confirm your Nexus CRM password<input type="password" name="password" required autocomplete="current-password"></label>'+
+   '<button class="primary" type="submit">Send one test to my email</button>'+
+   '<p class="muted">Restricted to the account owner. One attempt every 30 minutes. This never invites a customer.</p></form>'
+  :'<p class="muted">Self-test is not enabled yet. No customer emails can be sent.</p>';
+ return panel("Business email lab · sender connection",
+  '<p class="panel-note">NexusSoftwareUSA.com sender verification and actual email delivery are separate checks. The sample preview never sends a message or creates an invitation.</p>'+
   '<p><strong>CRM sender:</strong> '+safe(s.emailLab.status||"Not connected")+'</p>'+
   '<p><strong>Example subject:</strong> '+safe(sample.subject||"")+'</p>'+
-  '<p><strong>Recipient:</strong> '+safe(sample.to||"")+'</p>'+
+  '<p><strong>Example recipient:</strong> '+safe(sample.to||"")+'</p>'+
   '<div class="hint" style="white-space:pre-wrap">'+safe(sample.body||"")+'</div>'+
-  '<p class="muted">Illustrative text only: no real recipient, token, outgoing mail, or payment.</p>');
+  '<p class="muted">Illustrative text only: no real invitation token or customer address.</p>'+
+  testAction);
 }
 function companyAccessContent(){
  if(!s.account?.isPlatformOperator)return panel("Access denied","<p>Company enrollment is managed by the Nexus platform operator only.</p>");
@@ -988,6 +995,15 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="email-self-test"){
+   const done=await request("/api/platform/email-self-test","POST",{password:data.password});
+   if(done.providerAccepted){
+    s.emailTestStatus="Resend accepted a test addressed to "+done.recipient+". Check Inbox and Spam. Delivery not confirmed until you receive it.";
+    draw();
+    notice(s.emailTestStatus);
+   }else notice("Email test did not complete.");
+   return;
+  }
   if(type==="square-reconcile"){
    const result=await request("/api/pos/square/sandbox-reconcile","POST",{attempt_id:data.attempt_id,payment_id:String(data.payment_id||"").trim()});
    await loadPos();notice(result.reconciled?"Square Sandbox payment independently verified and sale reconciled. No real charge.":"Sandbox payment not reconciled.");return;
