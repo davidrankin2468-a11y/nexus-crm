@@ -16,7 +16,8 @@ const sqlRoot = readFileSync(new URL("../schema.sql",import.meta.url),"utf8");
 const migrations = [
  "002_employees_appointments.sql","003_finance.sql","004_recovery_audit.sql",
  "005_platform_operator.sql","006_company_invitations.sql","007_staff_invitations.sql",
- "008_account_recovery_codes.sql","009_staff_deactivation.sql","010_totp_mfa.sql"
+ "008_account_recovery_codes.sql","009_staff_deactivation.sql","010_totp_mfa.sql",
+ "015_invitation_delivery_provenance.sql"
 ];
 function memoryDB(){
  const raw = new DatabaseSync(":memory:");
@@ -204,6 +205,7 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    },201,{env:config});
    assert.equal(sentInvite.emailSubmitted,true);
    assert.equal(sentInvite.token,undefined,"Email delivery must not reveal invite token in HTTP response");
+   assert.equal(db.raw.prepare("SELECT delivery_mode FROM company_invitations WHERE id=?").get(sentInvite.id).delivery_mode,"email");
    assert.equal(sent.length,1);
    assert.equal(sent[0].to[0],"email-qa-owner@example.invalid");
    assert.equal(sent[0].text.includes("/#invite="),true);
@@ -216,6 +218,7 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    },201,{env:config});
    assert.equal(staff.token,undefined);
    assert.equal(staff.emailSubmitted,true);
+   assert.equal(db.raw.prepare("SELECT delivery_mode FROM staff_invitations WHERE id=?").get(staff.id).delivery_mode,"email");
    assert.equal(sent.length,2);
    assert.ok(sent[1].text.includes("/#staff="));
    await expectStatus(db,b,"POST","/api/staff/invitations/"+staff.id+"/revoke",{password:passwordB},200,{env:config});
@@ -241,6 +244,27 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
    },503,{env:config});
    assert.equal(db.raw.prepare("SELECT count(*) AS n FROM staff_invitations WHERE email='refused-staff@example.invalid' AND revoked_at IS NOT NULL").get().n,aBefore+1);
   }finally{globalThis.fetch=oldFetch;}
+ });
+ await t.test("strict commercial email policy blocks old manual owner and staff invites",async()=>{
+  const strict={REQUIRE_VERIFIED_INVITATION_EMAIL:"true"};
+  const manual=await expectStatus(db,a,"POST","/api/platform/invitations",{
+   companyName:"Old Manual Must Be Blocked",email:"legacy-manual-owner@example.invalid",password:passwordA
+  },201);
+  assert.equal(db.raw.prepare("SELECT delivery_mode FROM company_invitations WHERE id=?").get(manual.id).delivery_mode,"manual");
+  await expectStatus(db,null,"POST","/api/invitations/accept",{
+   token:manual.token,password:passwordB
+  },403,{env:strict});
+  assert.equal(db.raw.prepare("SELECT redeemed_at FROM company_invitations WHERE id=?").get(manual.id).redeemed_at,null);
+  await expectStatus(db,a,"POST","/api/platform/invitations/"+manual.id+"/revoke",{password:passwordA},200);
+  const staff=await expectStatus(db,b,"POST","/api/staff/invitations",{
+   email:"legacy-manual-staff@example.invalid",role:"employee",password:passwordB
+  },201);
+  assert.equal(db.raw.prepare("SELECT delivery_mode FROM staff_invitations WHERE id=?").get(staff.id).delivery_mode,"manual");
+  await expectStatus(db,null,"POST","/api/staff/invitations/accept",{
+   token:staff.token,password:passwordEmployee
+  },403,{env:strict});
+  assert.equal(db.raw.prepare("SELECT redeemed_at FROM staff_invitations WHERE id=?").get(staff.id).redeemed_at,null);
+  await expectStatus(db,b,"POST","/api/staff/invitations/"+staff.id+"/revoke",{password:passwordB},200);
  });
  await t.test("company B customer, job, employee, appointment and Finance",async()=>{
   bCustomer=(await expectStatus(db,b,"POST","/api/customers",{
