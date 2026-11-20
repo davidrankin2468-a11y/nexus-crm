@@ -4,6 +4,9 @@
 // Never log invitation links, tokens or Resend credentials.
 // This module performs no network I/O unless explicitly called by an authenticated
 // invite-creation workflow with a fully configured environment.
+// Never follow redirects with the Resend Authorization header: in Cloudflare
+// Workers, redirect:"error" is unsupported and throws before sending.
+// redirect:"manual" returns any 3xx response, treated as a rejected send.
 const address=/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const tokenRe=/^[a-f0-9]{64}$/;
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -84,7 +87,7 @@ export async function sendSelfTestEmail({env={},email,fetcher=(...args)=>globalT
  try{
   response=await fetcher("https://api.resend.com/emails",{
    method:"POST",headers:{"Authorization":"Bearer "+env.RESEND_API_KEY,"Content-Type":"application/json"},
-   body:JSON.stringify(body),redirect:"error",signal:AbortSignal.timeout(12000)
+   body:JSON.stringify(body),redirect:"manual",signal:AbortSignal.timeout(12000)
   });
  }catch{return {sent:false,reason:"DELIVERY_UNAVAILABLE"};}
  if(!response?.ok){
@@ -134,7 +137,7 @@ export async function sendInvitationEmail({env,email,companyName,token,kind="com
    method:"POST",
    headers:{"Authorization":"Bearer "+env.RESEND_API_KEY,"Content-Type":"application/json"},
    body:JSON.stringify(message),
-   redirect:"error",
+   redirect:"manual",
    signal:AbortSignal.timeout(12000)
   });
  }catch{return {sent:false,reason:"DELIVERY_UNAVAILABLE"};}
