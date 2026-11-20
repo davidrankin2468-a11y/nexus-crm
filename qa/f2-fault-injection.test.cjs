@@ -11,7 +11,7 @@ const job=section('if(type==="job"){','\n }catch(err){notice(err.message)}');
 const pos=section('function posPendingRead(){','function posContent(){');
 async function jobScenario(failJobs,failDashboard){
  const calls=[],messages=[],s={editingJob:null,jobs:[],dashboard:{}};
- const ctx={s,encodeURIComponent,Number,Promise,draw(){},notice(m){messages.push(m)},
+ const ctx={s,type:'job',encodeURIComponent,Number,Promise,draw(){},notice(m){messages.push(m)},
  async request(url,method,data){calls.push({url,method});if(method==='POST')return {id:'job-1'};if(url==='/api/jobs'){if(failJobs)throw Error('injected jobs GET failure');return {items:[{id:'job-1'}]}}if(url==='/api/dashboard'){if(failDashboard)throw Error('injected dashboard GET failure');return {jobs:1}}throw Error('unexpected request '+url)}};
  const fn=vm.runInNewContext('(async function(data){'+job+'\n})',ctx);
  await fn({amount:100});
