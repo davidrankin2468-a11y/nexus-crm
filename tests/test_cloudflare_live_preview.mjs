@@ -30,7 +30,9 @@ test("Cloudflare integrated CRM preview is reachable and not payment-enabled",as
 test("CRM D1 health is healthy on actual deployed preview",async()=>{
  const {response,json}=await get("/api/health");
  assert.equal(response.status,200);
- assert.equal(json().ok,true);
+ const health=json();
+ assert.equal(health.ok,true);
+ assert.equal(health.authenticatorAvailable,true,"MFA master key must remain configured on the deployed preview");
 });
 test("anonymous requests cannot read CRM or POS companies or licensing",async()=>{
  for(const path of ["/api/me","/api/pos/products","/api/pos/sales","/api/pos/licensing","/api/pos/export"]){
