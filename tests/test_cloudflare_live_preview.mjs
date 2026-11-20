@@ -70,6 +70,17 @@ test("business email lab is inaccessible to anonymous users and has no public se
  assert.match(app.text,/companyEmailLabContent/);
  assert.match(app.text,/Business email lab/);
 });
+test("private Gmail-alias invitation test cannot be sent anonymously",async()=>{
+ const {response}=await get("/api/platform/email-invite-pilot",{
+  method:"POST",headers:{"Content-Type":"application/json","Origin":base},
+  body:JSON.stringify({email:"outsider@example.invalid",password:"invalid"})
+ });
+ assert.equal(response.status,401);
+ const app=await get("/assets/app.js");
+ assert.equal(app.response.status,200);
+ assert.match(app.text,/data-form="email-invite-pilot"/);
+ assert.match(app.text,/pilotInviteAvailable/);
+});
 test("anonymous POST to POS cannot write a sale or run a payment",async()=>{
  const {response}=await get("/api/pos/sales",{
   method:"POST",headers:{"Content-Type":"application/json","Origin":base},
