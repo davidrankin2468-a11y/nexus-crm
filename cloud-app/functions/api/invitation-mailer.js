@@ -36,6 +36,32 @@ export function invitationMailReadiness(env={}){
  });
 }
 
+// No-cost preview for the private platform operator only.
+// Contains NO real email address, invitation token, provider secret, or executable link.
+export function freeInvitationEmailLab(env={}){
+ const ready=invitationMailReadiness(env);
+ return Object.freeze({
+  mode:"cloudflare_free_preview",
+  sendAvailable:false,
+  emailSent:false,
+  realInvitationCreated:false,
+  customDomainVerified:ready.providerConfigured,
+  productionEmailReady:false,
+  status:ready.providerConfigured?"Provider configured; live owner acceptance still required":"No verified sending domain connected",
+  sample:Object.freeze({
+   subject:"Your Nexus CRM company owner invitation (SAMPLE ONLY)",
+   to:"example-recipient@example.invalid",
+   from:"Not configured — sample only",
+   body:"Hello,\\n\\nYou have been invited to Sample Company on Nexus CRM.\\n\\n[Your unique invitation link would appear here after verification.]\\n\\nInvitations are single-use and expire after three days.\\n\\nThis is a preview. No email has been sent."
+  }),
+  steps:Object.freeze([
+   "Continue using the Cloudflare workers.dev private test preview at no additional domain cost",
+   "When ready, connect a Resend account and test a message to your own verified account inbox",
+   "Register and verify a domain before using a branded business sender or onboarding customers"
+  ])
+ });
+}
+
 export function buildInvitationEmail({env={},email,companyName,token,kind="company"}={}){
  if(!invitationMailReadiness(env).ready)throw Error("Verified invitation email delivery is not configured");
  if(typeof email!=="string"||email.length>254||!address.test(email))throw Error("Invalid invitation recipient");
