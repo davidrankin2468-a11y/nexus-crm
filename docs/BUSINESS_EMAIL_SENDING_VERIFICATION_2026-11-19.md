@@ -3,6 +3,15 @@
 **Checked:** November 19, 2026, America/Chicago.  
 **State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
 
+## Outbound API key connected and one-recipient self-test deployed — November 20, 2026
+
+- **Cloudflare Secret confirmed:** `RESEND_API_KEY` is present as a secret on the *integrated preview Worker*, not in source or chat. The secret's value was neither retrieved nor displayed.
+- **Dedicated owner-only self-test:** Added `POST /api/platform/email-self-test`, which requires authenticated platform operator access, valid CSRF, owner password confirmation and at most **one attempt per 30 minutes** enforced by staging D1 migration `016_email_self_test_limits.sql`. The recipient is taken directly from the signed-in operator's account email. The request cannot specify another recipient. The test message includes no invitation link/token and cannot provision customer accounts.
+- **No customer email enabled:** `EMAIL_DELIVERY_MODE=disabled` remains unchanged; a separate `EMAIL_SELF_TEST_ENABLED=true` flag enables only that one self-test route. `RESEND_FROM=notifications@nexussoftwareusa.com`, `RESEND_SENDER_DOMAIN_VERIFIED=true`, and the preview's existing `PUBLIC_APP_ORIGIN` were preserved.
+- **Frontend:** A password-confirmed **Send one test to my email** form is present in the operator-only **Management → Companies → Business Email Lab**. Successful submission reports **provider accepted** only; receipt to Gmail must be independently confirmed by the owner. No send has been initiated by this deployment.
+- **Release checks:** [CRM/POS security tests](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44686104272) and rerun [live preview smoke checks](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44686104299) passed. Existing twelve bindings, seven Worker modules, staging database records, and midnight backup schedules were retained. Cloudflare D1 integrity check returned `ok`.
+- **Next action:** Owner signs in to [private pilot CRM](https://nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev/), opens **Management → Companies → Business Email Lab**, enters current CRM password, and sends a single self-test. Gmail inbox or Spam arrival and sender authentication still need owner confirmation. Do not enable external customer invitations or real payments as part of this test.
+
 ## Cloudflare outbound sender pre-configuration — November 19, 2026
 
 The owner requested full Resend integration; the connected tools cannot create Resend credentials, because Resend is not a connected application. The user must create a Sending-access API key from the Resend dashboard and enter it directly in the Cloudflare Worker as a protected secret. Do not paste the key into chat or source control.
