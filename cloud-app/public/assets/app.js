@@ -491,6 +491,13 @@ function companyEmailLabContent(){
    '<button class="primary" type="submit">Send one test to my email</button>'+
    '<p class="muted">Restricted to the account owner. One attempt every 30 minutes. This never invites a customer.</p></form>'
   :'<p class="muted">Self-test is not enabled yet. No customer emails can be sent.</p>';
+ const pilotAction=s.emailLab.pilotInviteAvailable
+  ?'<form data-form="email-invite-pilot">'+
+   '<p><strong>Fictional company email invitation:</strong> creates a unique +nexus-test address that arrives in your Gmail inbox.</p>'+
+   '<label>Confirm your Nexus CRM password<input type="password" name="password" required autocomplete="current-password"></label>'+
+   '<button class="primary" type="submit">Email a pilot company invitation to my Gmail</button>'+
+   '<p class="muted">Private acceptance test only. No real customer account or payment is initiated. One outbound pilot test per 30 minutes.</p></form>'
+  :'<p class="muted">Pilot invitation sending is disabled. Regular customer emails remain disabled.</p>';
  return panel("Business email lab · sender connection",
   '<p class="panel-note">NexusSoftwareUSA.com sender verification and actual email delivery are separate checks. The sample preview never sends a message or creates an invitation.</p>'+
   '<p><strong>CRM sender:</strong> '+safe(s.emailLab.status||"Not connected")+'</p>'+
@@ -498,7 +505,7 @@ function companyEmailLabContent(){
   '<p><strong>Example recipient:</strong> '+safe(sample.to||"")+'</p>'+
   '<div class="hint" style="white-space:pre-wrap">'+safe(sample.body||"")+'</div>'+
   '<p class="muted">Illustrative text only: no real invitation token or customer address.</p>'+
-  testAction);
+  testAction+pilotAction);
 }
 function companyAccessContent(){
  if(!s.account?.isPlatformOperator)return panel("Access denied","<p>Company enrollment is managed by the Nexus platform operator only.</p>");
@@ -995,6 +1002,12 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
+  if(type==="email-invite-pilot"){
+   const result=await request("/api/platform/email-invite-pilot","POST",{password:data.password});
+   await refresh();s.managementView="Companies";draw();
+   notice("Pilot invitation accepted by Resend for "+result.email+". Check your Gmail inbox, then open the invitation link in a private tab. No customer billing enabled.");
+   return;
+  }
   if(type==="email-self-test"){
    const done=await request("/api/platform/email-self-test","POST",{password:data.password});
    if(done.providerAccepted){
