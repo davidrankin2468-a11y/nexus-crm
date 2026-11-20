@@ -3,6 +3,14 @@
 **Checked:** November 19, 2026, America/Chicago.  
 **State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
 
+## First outbound self-test rejected — safe diagnostics deployed, November 20, 2026
+
+- Owner reported the first self-test returned a generic failure from Resend. **The original provider HTTP status/body was not captured by our API**, so there is no confirmed root cause. Resend domain verified and API secret is present, but these do not prove API key correctness or domain permission.
+- Deployed new Worker version `6f503493-4b3f-4fe2-a9fe-3e68afd6b5ba` with allowlisted error messages for Resend HTTP statuses: **401** invalid key; **403** sending domain/permission mismatch; **400/422** message validation; **429** rate limit; **5xx** provider outage; and connection failures. The implementation does not print arbitrary Resend response bodies or credential values.
+- Failed provider self-tests now enforce a **2-minute** retry window instead of the 30-minute successful-send cooldown. The previous *failed* test's one staging-only throttle row was shortened to 2 minutes; no customer or business records changed. Owner account password, CSRF, operator role checks, self-recipient restriction, and customer delivery lock remain in effect.
+- The updated [CRM/POS test suite](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44688063084) passed, as did rerun [live Cloudflare smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44687962264). Database `PRAGMA quick_check=ok`, all 13 Worker bindings preserved, and the midnight backup schedules unchanged.
+- **Next:** Owner may inspect their failed request at [Resend API Logs](https://resend.com/logs) for the exact provider code, or wait at least 2 minutes from the revised cooldown and repeat **Management → Companies → Business Email Lab → Send one test to my email**. Do not share the API key or tokens in screenshots. Report the category shown and whether mail reaches Gmail. Do **not** enable real customer email or payments.
+
 ## Outbound API key connected and one-recipient self-test deployed — November 20, 2026
 
 - **Cloudflare Secret confirmed:** `RESEND_API_KEY` is present as a secret on the *integrated preview Worker*, not in source or chat. The secret's value was neither retrieved nor displayed.
