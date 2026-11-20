@@ -21,6 +21,22 @@
 - An encrypted write/read/delete probe succeeded against the actual R2 bucket using fictional data only.
 - The first full-data daily backup will not be marked successful until a real `.aes256gcm` object is observed in R2 after the first scheduled run and its Worker execution reports success.
 
+## Immediate manual backup and isolated recovery drill (November 19, 2026 CST)
+
+**Verified manual backup:** Stored in the private bucket under `snapshots/manual/v1/2026/11/20/verified-manual-*.aes256gcm`. The archive is **AES-256-GCM encrypted**, was read back from R2, decrypted in the same secure operation, authenticated, checked against SHA-256, and its data structure verified: **35 application tables, 84 SQL schema objects, 103 database rows**. D1 was read only. The separate recovery key is a Cloudflare Worker secret named `BACKUP_MANUAL_KEY_V2_20261119`. This key is not the MFA key or the scheduled backup's `BACKUP_ENCRYPTION_KEY`. Do not remove either key.
+
+An earlier manual object also exists; only the `verified-manual-` archive has the successful end-to-end readback result. Do not treat the earlier archive as the primary recovery point.
+
+**Consistency limitation:** This immediate manual backup collected tables using sequential, read-only D1 API queries, not a single database transaction. Although its counts and cryptographic integrity were validated, it is **not guaranteed point-in-time transactionally consistent if application records changed during extraction**. The separate daily Worker is intended to use D1 batched reads and must be verified after its first execution.
+
+**Isolated recovery and tenant-integrity drill:** Created temporary D1 database `nexus_crm_pos_restore_drill_20261119`. Successfully recreated all **35 tables, 37 indexes and 12 triggers**, uploaded/read/decrypted a **fictional** R2 backup fixture, restored fictional records for two companies, confirmed two customers, two jobs, two POS products, two sales and linked items, and verified `PRAGMA quick_check=ok` with **zero foreign-key violations**. Cross-company job and POS item inserts were rejected. Then deleted the temporary test database and fictional R2 object. The live source D1 and the private backup objects remained intact.
+
+**Not yet completed:** Actual restore of the `verified-manual-` encrypted data file into an isolated destination (including key escrow and full recovery procedure); observation and verification of the first full scheduled `snapshots/v1/` archive; off-account backup and key copies.
+
+**Schedule retained:** `0 9 * * *` UTC — first expected daily run **November 20, 2026, 03:00 CST**, with the existing daily backup health monitor inspecting its results.
+
+---
+
 ## Key and disaster recovery limitations
 
 The `BACKUP_ENCRYPTION_KEY` secret was generated within Cloudflare and never placed into GitHub or a chat. **Do not delete, rename or rotate the secret** without creating a separate, secure key-recovery and migration plan. R2 ciphertext cannot be decrypted without it. Preserving the MFA secret does not preserve the backup key: they are unrelated.
