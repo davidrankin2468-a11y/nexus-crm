@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {invitationMailReadiness,buildInvitationEmail,sendInvitationEmail,freeInvitationEmailLab} from "../cloud-app/functions/api/invitation-mailer.js";
+import {invitationMailReadiness,buildInvitationEmail,sendInvitationEmail,freeInvitationEmailLab,sendSelfTestEmail} from "../cloud-app/functions/api/invitation-mailer.js";
 const token="b".repeat(64);
 const safeEnv={
  EMAIL_DELIVERY_MODE:"resend",RESEND_API_KEY:"sandbox-test-secret-never-production",
@@ -28,6 +28,34 @@ test("Cloudflare free email preview never sends or exposes tokens, keys or real 
  assert.equal(configured.productionEmailReady,false);
 });
 
+test("owner-only connection test is explicit and does not use invitation tokens",async()=>{
+ let calls=0;
+ const selfEnv={...safeEnv,EMAIL_DELIVERY_MODE:"disabled",EMAIL_SELF_TEST_ENABLED:"true"};
+ const fetcher=async (url,options)=>{
+  calls++;
+  assert.equal(url,"https://api.resend.com/emails");
+  assert.equal(options.method,"POST");
+  assert.equal(options.redirect,"error");
+  const data=JSON.parse(options.body);
+  assert.deepEqual(data.to,["person@example.org"]);
+  assert.equal(data.from,selfEnv.RESEND_FROM);
+  assert.match(data.subject,/connection test/i);
+  assert.ok(!JSON.stringify(data).includes(token));
+  assert.ok(!JSON.stringify(data).includes("/#invite="));
+  return {ok:true,json:async()=>({id:"mail-test-accepted"})};
+ };
+ assert.equal(freeInvitationEmailLab(selfEnv).selfTestAvailable,true);
+ assert.equal(freeInvitationEmailLab(selfEnv).sendAvailable,false);
+ assert.equal(freeInvitationEmailLab(selfEnv).productionEmailReady,false);
+ assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"person@example.org",fetcher}),{sent:true,reason:"PROVIDER_ACCEPTED"});
+ assert.equal(calls,1);
+ assert.deepEqual(await sendSelfTestEmail({env:{...selfEnv,EMAIL_SELF_TEST_ENABLED:"false"},email:"person@example.org",fetcher}),{sent:false,reason:"SELF_TEST_NOT_CONFIGURED"});
+ assert.equal(calls,1);
+ assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"malformed",fetcher}),{sent:false,reason:"INVALID_ACCOUNT_EMAIL"});
+ assert.equal(calls,1);
+ assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"person@example.org",fetcher:async()=>({ok:false,status:401})}),{sent:false,reason:"DELIVERY_REJECTED"});
+ assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"person@example.org",fetcher:async()=>{throw Error("connection");}}),{sent:false,reason:"DELIVERY_UNAVAILABLE"});
+});
 test("onboarding email remains disabled until sender/domain/provider are configured",()=>{
  const read=invitationMailReadiness({});
  assert.equal(read.ready,false);
