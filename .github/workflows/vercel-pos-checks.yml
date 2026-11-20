@@ -56,12 +56,7 @@ jobs:
       - name: Check Vercel server modules
         run: |
           node --check lib/nexus-pos-server.js
-          node --check api/pos/products.js
-          node --check api/pos/login.js
-          node --check api/pos/companies.js
-          node --check api/pos/receipts.js
-          node --check api/pos/sales.js
-          node --check api/pos/status.js
+          node --check 'api/pos/[...route].js'
           node --check api/square/sandbox-status.js
           node --check lib/nexus-square-sandbox.js
           node --check lib/nexus-square-connectivity.js
