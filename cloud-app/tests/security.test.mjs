@@ -604,3 +604,61 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
  });
  console.log("All isolated QA scenarios finished. No production database used.");
 });
+
+test("isolated platform Gmail-plus pilot invitation: no customer sending, one-time redemption and tenant isolation",async()=>{
+ const db=memoryDB();
+ for(const file of migrations)db.raw.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
+ const owner=client(),invitee=client(),setupCode=random();
+ const ownerMail="qa-private-pilot@gmail.com",ownerPw="Nexus-Testing-Owner-Pass-2468",inviteePw="Nexus-Testing-Invitee-Pass-2468";
+ await db.prepare("INSERT INTO bootstrap_tokens(token_hash,created_at,expires_at) VALUES(?,?,?)")
+  .bind(sha256(setupCode),Math.floor(Date.now()/1000),Math.floor(Date.now()/1000)+300).run();
+ await expectStatus(db,owner,"POST","/api/setup",{setupCode,companyName:"Nexus Fictional QA",email:ownerMail,password:ownerPw},201);
+ db.raw.exec(readFileSync(new URL("../migrations/005_platform_operator.sql",import.meta.url),"utf8"));
+ const env={EMAIL_INVITATION_PILOT_ENABLED:"true",EMAIL_DELIVERY_MODE:"disabled",
+  RESEND_API_KEY:"ci-fake-provider-never-live",RESEND_FROM:"notifications@nexussoftwareusa.com",
+  RESEND_SENDER_DOMAIN_VERIFIED:"true",PUBLIC_APP_ORIGIN:"https://qa.nexus.invalid"};
+ assert.equal((await expectStatus(db,owner,"GET","/api/platform/email-lab",undefined,200,{env})).pilotInviteAvailable,true);
+ assert.equal((await expectStatus(db,owner,"GET","/api/platform/email-lab",undefined,200,{env:{...env,EMAIL_INVITATION_PILOT_ENABLED:"false"}})).pilotInviteAvailable,false);
+ await expectStatus(db,null,"POST","/api/platform/email-invite-pilot",{password:ownerPw},401,{env});
+ await expectStatus(db,owner,"POST","/api/platform/email-invite-pilot",{password:ownerPw},503,{env:{...env,EMAIL_INVITATION_PILOT_ENABLED:"false"}});
+ await expectStatus(db,owner,"POST","/api/platform/email-invite-pilot",{password:"wrong"},403,{env});
+ let transportCalls=0,mailMessage=null;
+ const original=globalThis.fetch;
+ try{
+  globalThis.fetch=async (url,options)=>{
+   assert.equal(url,"https://api.resend.com/emails");
+   assert.equal(options.redirect,"manual");
+   mailMessage=JSON.parse(options.body);
+   assert.equal(mailMessage.to.length,1);
+   assert.match(mailMessage.to[0],/^qa-private-pilot\+nexus-test-[a-z0-9-]+@gmail\.com$/);
+   assert.equal(mailMessage.from,"notifications@nexussoftwareusa.com");
+   transportCalls++;
+   return new Response(JSON.stringify({id:"test-provider-accepted-pilot"}),{status:200,headers:{"Content-Type":"application/json"}});
+  };
+  const created=await expectStatus(db,owner,"POST","/api/platform/email-invite-pilot",{
+   password:ownerPw,email:"stranger@example.org",companyName:"Malicious override"
+  },201,{env});
+  assert.equal(created.emailSubmitted,true);
+  assert.equal(created.pilotOnly,true);
+  assert.equal(created.delivered,false);
+  assert.match(created.email,/^qa-private-pilot\+nexus-test-[a-z0-9-]+@gmail\.com$/);
+  assert.equal(created.token,undefined);
+  assert.equal(transportCalls,1);
+  assert.equal(mailMessage.to[0],created.email);
+  const stored=db.raw.prepare("SELECT owner_email,company_name,delivery_mode,redeemed_at FROM company_invitations WHERE id=?").get(created.id);
+  assert.equal(stored.owner_email,created.email);
+  assert.equal(stored.company_name,created.companyName);
+  assert.equal(stored.delivery_mode,"email");
+  assert.equal(stored.redeemed_at,null);
+  await expectStatus(db,owner,"POST","/api/platform/email-invite-pilot",{password:ownerPw},429,{env});
+  assert.equal(transportCalls,1);
+  const token=mailMessage.text.match(/#invite=([a-f0-9]{64})/)?.[1];
+  assert.ok(token,"Only outbound provider message should contain redemption token");
+  await expectStatus(db,invitee,"POST","/api/invitations/accept",{token,password:inviteePw},201,{env});
+  assert.equal((await expectStatus(db,invitee,"GET","/api/me",undefined,200,{env})).user.isPlatformOperator,false);
+  await expectStatus(db,invitee,"GET","/api/platform/companies",undefined,403,{env});
+  assert.deepEqual((await expectStatus(db,invitee,"GET","/api/customers",undefined,200,{env})).items,[]);
+  await expectStatus(db,null,"POST","/api/invitations/accept",{token,password:inviteePw},403,{env});
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n,1);
+ }finally{globalThis.fetch=original;}
+});
