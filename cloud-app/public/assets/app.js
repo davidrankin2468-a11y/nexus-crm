@@ -1176,19 +1176,25 @@ document.addEventListener("submit",async e=>{
    await request(path,s.editingEstimate?"PATCH":"POST",data);
    s.editingEstimate=null;await refresh();notice("Estimate saved to your private cloud database.");return;
   }
-  if(type==="convert-estimate"){
-   await request("/api/invoices/from-estimate","POST",data);
-   s.financeView="Invoices";await refresh();notice("Invoice created from your accepted estimate.");return;
-  }
-  if(type==="invoice"){
-   data.amount=Number(data.amount);
-   await request("/api/invoices","POST",data);
-   await refresh();notice("Invoice saved to your private cloud database.");return;
-  }
-  if(type==="payment"){
-   data.amount=Number(data.amount);
-   await request("/api/payments","POST",data);
-   await refresh();notice("Manual payment recorded successfully.");return;
+  if(type==="convert-estimate"||type==="invoice"||type==="payment"){
+   // Confirm an acknowledged write independently of subsequent read failures.
+   const converting=type==="convert-estimate",paying=type==="payment";
+   if(!converting)data.amount=Number(data.amount);
+   const endpoint=converting?"/api/invoices/from-estimate":paying?"/api/payments":"/api/invoices";
+   await request(endpoint,"POST",data);
+   if(converting)s.financeView="Invoices";
+   const reads=await Promise.allSettled([
+    request("/api/estimates"),request("/api/invoices"),request("/api/payments"),request("/api/reports")
+   ]);
+   if(reads[0].status==="fulfilled")s.estimates=reads[0].value.items;
+   if(reads[1].status==="fulfilled")s.invoices=reads[1].value.items;
+   if(reads[2].status==="fulfilled")s.payments=reads[2].value.items;
+   if(reads[3].status==="fulfilled")s.financeReport=reads[3].value.totals;
+   const complete=reads.every(x=>x.status==="fulfilled");
+   s.financeError=complete?"":"Financial records could not all refresh. Your submission succeeded; use Refresh, not Submit again.";
+   draw();
+   const confirmation=converting?"Invoice created from your accepted estimate.":paying?"Manual payment recorded successfully.":"Invoice saved to your private cloud database.";
+   notice(complete?confirmation:confirmation+" Some records could not refresh; select Refresh to retry. Do not submit again.");return;
   }
   if(type==="job"){
    data.amount=Number(data.amount);
