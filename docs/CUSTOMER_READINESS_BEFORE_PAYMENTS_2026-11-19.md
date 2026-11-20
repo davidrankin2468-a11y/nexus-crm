@@ -11,6 +11,16 @@
 3. **Payment lanes in parallel but not active.** Connect and verify two distinct Square merchant integrations: Nexus Software Solutions' software subscriptions/licenses, and each customer company's POS receipts through that company's authorized Square merchant. Do not reuse merchant tokens or routing across companies.
 4. **Final release approval.** Validate authorized Sandbox provider transactions, tax/receipt/refund behavior, subscriptions and entitlements, legal policies, actual owner UAT and qualified security review. Publish prices and enable live transactions only after a separate explicit owner approval.
 
+## Latest onboarding progress — Nov 19, 2026
+
+- **Transactional email foundation implemented** in `cloud-app/functions/api/invitation-mailer.js`; uses provider-verified sender, protected `RESEND_API_KEY`, strict HTTPS origin and private single-use URL fragments. No provider secret is stored in the repository.
+- **Owner and staff invitations support opt-in `deliveryMode:"email"`** behind configuration gates. When sender credentials are absent the API returns 503 **before creating an invitation**. If a configured provider rejects delivery, the newly issued invitation is revoked. On successful provider acceptance, the HTTP response omits the invitation token. Existing password-protected manual pilot invitations still work.
+- **Production manual invitations can be disabled** by setting `REQUIRE_VERIFIED_INVITATION_EMAIL="true"` after the sending service and domain are verified. Do **not** enable it in the current pilot until delivery works. The current preview has **no connected email-sending provider** and does not send customer email.
+- **Tests added** for HTML escaping, strict HTTPS/no-open-redirect link formation, staff-versus-company invitation routing, fake provider acceptance/failure, owner-only issuing, no raw token in delivered-email API responses, revoked provider-failure invitations, and rejection when email service is not configured. CI uses fake network transport and fictional data.
+- **Cloudflare integrated staging Worker updated** with optional mailer module and all seven original secret/database bindings retained. No real customer activation or payments were enabled.
+- **Passing verification:** [full POS and CRM regression](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44662309052) and [live Cloudflare smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44662308882).
+- **Still blocked on owner/vendor configuration:** Verified transactional sender domain and provider account/API key. A provider accepting a message for delivery is **not** proof the email reached the mailbox; run real delivery and link-acceptance UAT after setup.
+
 ## Customer-facing gate — evidence and remaining checks
 
 | Gate | Current evidence | Decision |
