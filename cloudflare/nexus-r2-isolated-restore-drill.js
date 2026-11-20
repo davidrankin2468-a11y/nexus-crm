@@ -58,7 +58,9 @@ export async function restoreActualEncryptedArchive(env){
  if(nrows!==data.totalRows||String(nrows)!==m.rows||tables.length!==Number(m.tables)||nrows>20000)
   throw Error("Snapshot row and schema counts do not match authenticated envelope");
  // Only the isolated empty RECOVERY_DB receives writes.
- for(const t of tables)await env.RECOVERY_DB.exec(t.sql);
+ // D1.exec() splits SQL on newlines, which breaks formatted CREATE TABLE DDL.
+ // D1.prepare().run() executes each complete multiline SQLite DDL statement.
+ for(const t of tables)await env.RECOVERY_DB.prepare(t.sql).run();
  const writes=[env.RECOVERY_DB.prepare("PRAGMA defer_foreign_keys=ON")];
  for(const t of tables){
   const rows=data.records[t.name];
@@ -74,7 +76,7 @@ export async function restoreActualEncryptedArchive(env){
  }
  // D1.batch is transactional. Deferred FK checks execute at commit.
  await env.RECOVERY_DB.batch(writes);
- for(const s of other)await env.RECOVERY_DB.exec(s.sql);
+ for(const s of other)await env.RECOVERY_DB.prepare(s.sql).run();
  const ok=await env.RECOVERY_DB.prepare("PRAGMA quick_check").first();
  if(ok?.quick_check!=="ok")throw Error("Restored D1 quick_check failed");
  const fk=await env.RECOVERY_DB.prepare("PRAGMA foreign_key_check").all();
