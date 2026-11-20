@@ -26,6 +26,9 @@ test("Cloudflare integrated CRM preview is reachable and not payment-enabled",as
   app:execFileSync("git",["hash-object","cloud-app/public/assets/app.js"],{encoding:"utf8"}).trim(),
  };
  assert.deepEqual(info.blobs,blobs,"Cloudflare preview must match the current CRM and POS source code");
+ const integratedHash=execFileSync("git",["hash-object","cloudflare/nexus-pos-integrated-worker-module.js"],{encoding:"utf8"}).trim();
+ assert.equal(info.integratedPosHash,integratedHash,"Cloudflare must publish the hash of its Square-aware integrated POS module");
+
  // Independently check the bytes the Worker actually serves, not just its reported manifest.
  const servedApp=await get("/assets/app.js");
  assert.equal(servedApp.response.status,200);
