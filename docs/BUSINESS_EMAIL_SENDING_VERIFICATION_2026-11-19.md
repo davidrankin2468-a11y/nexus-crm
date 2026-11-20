@@ -3,6 +3,21 @@
 **Checked:** November 19, 2026, America/Chicago.  
 **State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
 
+## Cloudflare outbound sender pre-configuration — November 19, 2026
+
+The owner requested full Resend integration; the connected tools cannot create Resend credentials, because Resend is not a connected application. The user must create a Sending-access API key from the Resend dashboard and enter it directly in the Cloudflare Worker as a protected secret. Do not paste the key into chat or source control.
+
+The integrated Cloudflare Worker `nexus-crm-pos-integrated-preview` was updated to version `fade22a0-af50-48c5-ba00-cfc008608a71` with all 7 existing bindings **strictly inherited** and four new non-secret text bindings:
+
+- `EMAIL_DELIVERY_MODE=disabled` (intentionally fail-closed, even if the key is later saved)
+- `RESEND_FROM=notifications@nexussoftwareusa.com`
+- `RESEND_SENDER_DOMAIN_VERIFIED=true` (based on user-supplied Resend verified screenshot, not an independent Resend API check)
+- `PUBLIC_APP_ORIGIN=https://nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev` (private pilot's current HTTPS origin; not a new commercial public domain)
+
+The Worker contains **no `RESEND_API_KEY` binding**. Cloudflare deployment succeeded; staging D1 `PRAGMA quick_check=ok`, existing private Gmail forwarding `ready`, and original midnight backup schedules `0 5 * * *` / `0 6 * * *` UTC preserved.
+
+**Next safe handoff:** Owner opens https://resend.com/api-keys, creates a Sending-access key scoped to `nexussoftwareusa.com`, copies it privately, and pastes it into the Cloudflare Worker settings **Variables and Secrets → Add → Secret**, name `RESEND_API_KEY`; after they confirm saving it, verify the key exists without reading its value, then enable `EMAIL_DELIVERY_MODE=resend` **only for a controlled self-test**, confirm actual inbox arrival, and leave commercial invitation requirements off until an explicit customer-release approval. Provider acceptance is not proof of email delivery.
+
 ## Resend domain verified — owner confirmation, November 19, 2026
 
 - The owner supplied a screenshot of the Resend domain dashboard showing `nexussoftwareusa.com` status **Verified**, `Resend Forge` **Ready**, and the event **Domain verified: Your domain is ready to send emails**.
