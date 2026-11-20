@@ -99,8 +99,8 @@ export async function onRequest({request,env}){
     const approved=await db.prepare("SELECT id FROM customers WHERE tenant_id=? AND id=?").bind(tenant,customerId).first();
     if(!approved)return json({error:"CRM customer not found in this company"},404);
    }
-   const old=await db.prepare("SELECT id,total_cents FROM pos_sales WHERE tenant_id=? AND idempotency_key=?").bind(tenant,v.idempotency_key).first();
-   if(old)return json({id:old.id,total_cents:old.total_cents,status:"pending",payment_charged:false,recorded_only:true,duplicate:true});
+   const old=await db.prepare("SELECT id,total_cents,status FROM pos_sales WHERE tenant_id=? AND idempotency_key=?").bind(tenant,v.idempotency_key).first();
+   if(old)return json({id:old.id,total_cents:old.total_cents,status:old.status,payment_charged:false,recorded_only:true,duplicate:true});
    const qty=new Map();
    for(const item of v.items){if(typeof item.product_id!=="string"||!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>1000)return json({error:"Invalid line"},400);qty.set(item.product_id,(qty.get(item.product_id)||0)+item.quantity)}
    if(qty.size>50)return json({error:"Too many products"},400);
