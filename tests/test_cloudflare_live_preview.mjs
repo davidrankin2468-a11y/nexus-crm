@@ -62,6 +62,14 @@ test("anonymous users cannot send company invitations or bypass private onboardi
  });
  assert.equal(unknown.status,401,"Public signup must not register unauthenticated visitors");
 });
+test("business email lab is inaccessible to anonymous users and has no public send surface",async()=>{
+ const {response}=await get("/api/platform/email-lab");
+ assert.equal(response.status,401);
+ const app=await get("/assets/app.js");
+ assert.equal(app.response.status,200);
+ assert.match(app.text,/companyEmailLabContent/);
+ assert.match(app.text,/Business email lab/);
+});
 test("anonymous POST to POS cannot write a sale or run a payment",async()=>{
  const {response}=await get("/api/pos/sales",{
   method:"POST",headers:{"Content-Type":"application/json","Origin":base},
