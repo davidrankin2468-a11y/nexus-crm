@@ -64,10 +64,10 @@ export function freeInvitationEmailLab(env={}){
  });
 }
 
-// This route exists ONLY for the private operator's own account email.
+// Preserve the global fetch receiver in Cloudflare Workers. Passing fetch as\n// a bare default callback can throw "Illegal invocation" before any API call.\n// This route exists ONLY for the private operator's own account email.
 // It does not use a live invitation token and does not change normal email
 // onboarding rollout state. The API checks operator, password and throttle.
-export async function sendSelfTestEmail({env={},email,fetcher=fetch}={}){
+export async function sendSelfTestEmail({env={},email,fetcher=(...args)=>globalThis.fetch(...args)}={}){
  const ready=env.EMAIL_SELF_TEST_ENABLED==="true"
    &&invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready;
  if(!ready)return {sent:false,reason:"SELF_TEST_NOT_CONFIGURED"};
@@ -125,7 +125,7 @@ export function buildInvitationEmail({env={},email,companyName,token,kind="compa
 
 // Injectable fetcher makes provider failure tests completely offline. All
 // success and error returns are deliberately non-sensitive.
-export async function sendInvitationEmail({env,email,companyName,token,kind="company",fetcher=fetch}={}){
+export async function sendInvitationEmail({env,email,companyName,token,kind="company",fetcher=(...args)=>globalThis.fetch(...args)}={}){
  const message=buildInvitationEmail({env,email,companyName,token,kind});
  if(typeof fetcher!=="function")throw Error("Email delivery transport unavailable");
  let response;
