@@ -1,7 +1,14 @@
 # Nexus Software Solutions — transactional business email verification
 
-**Checked:** November 19, 2026, America/Chicago.  
-**State:** DOMAIN REGISTERED AND VERIFIED IN RESEND; CRM OUTBOUND PROVIDER CREDENTIALS NOT CONNECTED. No real outbound send has been performed; customer onboarding remains a private test pilot.
+**Last verified:** November 20, 2026, America/Chicago.  
+**State:** RESEND DOMAIN VERIFIED, OUTBOUND API KEY CONNECTED, AND SELF-TEST EMAIL RECEIVED IN GMAIL. Commercial/customer invitation email remains disabled pending additional authorization and end-to-end acceptance testing.
+
+## Success: first end-to-end outbound message received — November 20, 2026
+
+- The owner supplied a screenshot from Gmail confirming the message **“Nexus CRM email connection test”** arrived in their **Inbox at 12:50 AM Central time**. The message body matches Nexus's restricted Resend self-test email template, and the displayed sender is the Nexus business notifications address.
+- This is user-confirmed evidence of real end-to-end delivery from the private CRM's Resend test workflow to the owner's Gmail inbox. It does **not** validate automatic company/staff invitation acceptance, webhook delivery receipts, mail at scale, tenant-specific outbound settings, or marketing/transactional legal compliance.
+- Cloudflare verification after delivery: preview Worker version `2a32e478-0090-4fea-9d36-1bd7f085ef37`; `RESEND_API_KEY` is still protected as a secret, `RESEND_FROM=notifications@nexussoftwareusa.com`, `EMAIL_SELF_TEST_ENABLED=true`, **`EMAIL_DELIVERY_MODE=disabled`**, and the midnight backup Worker schedules remain unchanged.
+- **Next release gate:** Test a single controlled invitation to an explicitly authorized fictional tenant/owner mailbox, including one-time redemption and replay denial; confirm that it cannot cross tenants. Keep customer onboarding, recurring subscriptions, and actual Square charges disabled until a separate commercial approval.
 
 ## Confirmed Cloudflare runtime request-construction bug — November 20, 2026
 
