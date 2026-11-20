@@ -29,6 +29,10 @@ jobs:
         run: node --test tests/test_pos_retry_client.mjs
       - name: Encrypted CRM backup round-trip and tamper rejection
         run: node --test cloud-app/tests/backup-crypto.test.mjs
+      - name: Private R2 scheduled backup encryption and readback tests
+        run: |
+          node --check cloudflare/nexus-crm-pos-r2-backup-worker.js
+          node --test tests/test_r2_backup_worker.mjs
       - name: Main CRM browser JavaScript syntax
         run: node --check cloud-app/public/assets/app.js
       - name: CRM and POS shared-navigation security assertions
