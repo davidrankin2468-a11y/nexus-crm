@@ -54,6 +54,16 @@ test("anonymous writes cannot insert POS sales, prepare a charge, or alter custo
   assert.equal(r.res.status,401,path+" must fail without a session and never write data");
  }
 });
+test("small read-only availability burst returns consistent healthy responses",async()=>{
+ // This is a bounded smoke test, not a production load or capacity benchmark.
+ const requests=Array.from({length:8},(_,i)=>request(i%2?"/api/health":"/preview-info"));
+ const results=await Promise.all(requests);
+ for(let i=0;i<results.length;i++){
+  assert.equal(results[i].res.status,200,"Read-only health response "+i+" must succeed");
+  const data=results[i].json();
+  assert.equal(i%2?data.ok:data.paymentProcessing,i%2?true:false);
+ }
+});
 test("staging HTML uses strict CSP, HSTS, no caching, and blocks framing",async()=>{
  const {res,body}=await request("/");
  assert.equal(res.status,200);
