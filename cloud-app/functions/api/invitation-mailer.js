@@ -45,19 +45,19 @@ export function freeInvitationEmailLab(env={}){
   sendAvailable:false,
   emailSent:false,
   realInvitationCreated:false,
-  customDomainVerified:ready.providerConfigured,
+  senderConfiguredInCRM:ready.providerConfigured,
   productionEmailReady:false,
-  status:ready.providerConfigured?"Provider configured; live owner acceptance still required":"No verified sending domain connected",
+  status:ready.providerConfigured?"Sender configured in CRM; final delivery tests still required":"CRM outbound sender not connected yet; confirm Resend domain verification separately",
   sample:Object.freeze({
    subject:"Your Nexus CRM company owner invitation (SAMPLE ONLY)",
    to:"example-recipient@example.invalid",
    from:"Not configured — sample only",
-   body:"Hello,\\n\\nYou have been invited to Sample Company on Nexus CRM.\\n\\n[Your unique invitation link would appear here after verification.]\\n\\nInvitations are single-use and expire after three days.\\n\\nThis is a preview. No email has been sent."
+   body:"Hello,\n\nYou have been invited to Sample Company on Nexus CRM.\n\n[Your unique invitation link would appear here after verification.]\n\nInvitations are single-use and expire after three days.\n\nThis is a preview. No email has been sent."
   }),
   steps:Object.freeze([
-   "Continue using the Cloudflare workers.dev private test preview at no additional domain cost",
-   "When ready, connect a Resend account and test a message to your own verified account inbox",
-   "Register and verify a domain before using a branded business sender or onboarding customers"
+   "The private Cloudflare preview stays available during email verification",
+   "After Resend marks NexusSoftwareUSA.com Verified, configure the Resend API key securely in Cloudflare",
+   "Test sending only to a verified inbox you control before enabling customer invitations"
   ])
  });
 }
