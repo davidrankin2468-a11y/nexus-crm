@@ -6,8 +6,9 @@ import {restoreActualEncryptedArchive,authorizedRestoreRequest} from "../cloudfl
 Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
 const enc=new TextEncoder();
 const tables=["tenants","users","user_mfa","account_recovery_codes","customers","jobs","appointments","employees","estimates","invoices","payments","backup_snapshots","security_audit","sessions","pos_sales","pos_products","pos_sale_items","pos_refunds","pos_payment_events"];
-const schema=tables.map(n=>({type:"table",name:n,sql:`CREATE TABLE "${n}" (id TEXT PRIMARY KEY${n==="users"?',tenant_id TEXT REFERENCES tenants(id)':""})`}));
+const schema=tables.map(n=>({type:"table",name:n,sql:`CREATE TABLE "${n}" (\n id TEXT PRIMARY KEY${n==="users"?",\n tenant_id TEXT REFERENCES tenants(id)":""}\n)`}));
 schema.push({type:"index",name:"idx_users_tenant",sql:"CREATE INDEX idx_users_tenant ON users(tenant_id)"});
+schema.push({type:"trigger",name:"trg_jobs_restore_probe",sql:"CREATE TRIGGER trg_jobs_restore_probe AFTER INSERT ON jobs\n BEGIN\n SELECT 1;\n END"});
 const records=Object.fromEntries(tables.map(t=>[t,t==="tenants"?[{id:"fictional-tenant"}]:t==="users"?[{id:"fictional-user",tenant_id:"fictional-tenant"}]:[]]));
 function recovery(){
  const db=new DatabaseSync(":memory:");
@@ -57,7 +58,7 @@ test("decrypt exact AES-GCM R2 archive and fully restore isolated D1 tables/inde
  assert.equal(res.verified,true);
  assert.equal(res.tableCount,tables.length);
  assert.equal(res.recordCount,2);
- assert.equal(res.schemaObjectCount,tables.length+1);
+ assert.equal(res.schemaObjectCount,tables.length+2);
  assert.equal(res.foreignKeyViolations,0);
  assert.equal(res.liveSourceModified,false);
  assert.equal(db.prepare("SELECT count(*) n FROM tenants").get().n,1);
