@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Script} from 'node:vm';
-import login from '../api/pos/login.js';
-import companies from '../api/pos/companies.js';
+import posRoute from '../api/pos/[...route].js';
+// Keep security tests aimed at the consolidated POS backend, not retired route files.
+const forRoute=name=>(req,res)=>posRoute({...req,query:{...(req.query||{}),route:name}},res);
+const login=forRoute('login');
+const companies=forRoute('companies');
 
 const companyA='11111111-1111-4111-8111-111111111111',companyB='22222222-2222-4222-8222-222222222222';
 const userId='33333333-3333-4333-8333-333333333333';
