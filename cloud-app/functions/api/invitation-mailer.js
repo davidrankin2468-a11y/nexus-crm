@@ -87,7 +87,17 @@ export async function sendSelfTestEmail({env={},email,fetcher=fetch}={}){
    body:JSON.stringify(body),redirect:"error",signal:AbortSignal.timeout(12000)
   });
  }catch{return {sent:false,reason:"DELIVERY_UNAVAILABLE"};}
- if(!response?.ok)return {sent:false,reason:"DELIVERY_REJECTED"};
+ if(!response?.ok){
+  // Do not forward Resend's arbitrary error text: it may contain addresses,
+  // credentials, or provider internals. Only reveal finite status categories.
+  const status=Number(response?.status);
+  const reason=status===401?"API_KEY_REJECTED":
+    status===403?"SENDER_OR_KEY_PERMISSIONS":
+    status===400||status===422?"MESSAGE_VALIDATION":
+    status===429?"RATE_LIMITED":
+    status>=500&&status<=599?"PROVIDER_ERROR":"DELIVERY_REJECTED";
+  return {sent:false,reason};
+ }
  try{
   const data=await response.json();
   if(typeof data?.id!=="string"||data.id.length<5||data.id.length>200)
