@@ -5,6 +5,14 @@ import {Script} from "node:vm";
 const app=readFileSync("cloud-app/public/assets/app.js","utf8");
 const index=readFileSync("cloud-app/public/index.html","utf8");
 const api=readFileSync("cloud-app/functions/api/pos/[[path]].js","utf8");
+test("business email lab is shown only inside platform Management, never sends mail",()=>{
+ assert.match(app,/function companyEmailLabContent\(\)/);
+ assert.match(app,/if\(!s\.account\?\.isPlatformOperator\)return ""/);
+ assert.match(app,/companyEmailLabContent\(\)/);
+ assert.match(app,/request\("\/api\/platform\/email-lab"\)/);
+ assert.match(app,/preview never sends a message or creates an invitation/);
+ assert.doesNotThrow(()=>new Script(app));
+});
 test("existing five tabs are preserved; POS stays within Finance",()=>{
  assert.match(app,/const tabs=\["Dashboard","Customers","Operations","Finance","Management"\]/);
  assert.match(app,/const financeViews=\["Estimates","Invoices","Payments","Reports","POS"\]/);
