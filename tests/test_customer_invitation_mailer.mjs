@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {invitationMailReadiness,buildInvitationEmail,sendInvitationEmail} from "../cloud-app/functions/api/invitation-mailer.js";
+import {invitationMailReadiness,buildInvitationEmail,sendInvitationEmail,freeInvitationEmailLab} from "../cloud-app/functions/api/invitation-mailer.js";
 const token="b".repeat(64);
 const safeEnv={
  EMAIL_DELIVERY_MODE:"resend",RESEND_API_KEY:"sandbox-test-secret-never-production",
@@ -8,6 +8,25 @@ const safeEnv={
  PUBLIC_APP_ORIGIN:"https://nexus.example.org"
 };
 const create=(other={})=>({env:safeEnv,email:"person@example.org",companyName:"Sample & Sons <QA>",token,kind:"company",...other});
+
+test("Cloudflare free email preview never sends or exposes tokens, keys or real recipients",()=>{
+ const lab=freeInvitationEmailLab({RESEND_API_KEY:"secret-that-must-not-appear",PUBLIC_APP_ORIGIN:"https://nexussoftwareusa.com"});
+ assert.equal(lab.mode,"cloudflare_free_preview");
+ assert.equal(lab.sendAvailable,false);
+ assert.equal(lab.emailSent,false);
+ assert.equal(lab.realInvitationCreated,false);
+ assert.equal(lab.productionEmailReady,false);
+ assert.equal(lab.senderConfiguredInCRM,false);
+ assert.equal(lab.sample.to,"example-recipient@example.invalid");
+ assert.ok(lab.sample.body.includes("This is a preview"));
+ assert.ok(lab.sample.body.includes("\\n"));
+ assert.ok(!JSON.stringify(lab).includes("secret-that-must-not-appear"));
+ assert.ok(!JSON.stringify(lab).includes("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+ const configured=freeInvitationEmailLab(safeEnv);
+ assert.equal(configured.senderConfiguredInCRM,true);
+ assert.equal(configured.sendAvailable,false);
+ assert.equal(configured.productionEmailReady,false);
+});
 
 test("onboarding email remains disabled until sender/domain/provider are configured",()=>{
  const read=invitationMailReadiness({});
