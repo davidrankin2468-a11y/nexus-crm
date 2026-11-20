@@ -69,6 +69,14 @@ test("anonymous POST to POS cannot write a sale or run a payment",async()=>{
  });
  assert.equal(response.status,401);
 });
+test("customer launch remains a private pilot, not public enrollment",async()=>{
+ const page=await get("/");
+ assert.equal(page.response.status,200);
+ assert.match(page.text,/Pilot system — use test records until launch review/);
+ const status=await get("/api/status");
+ assert.equal(status.response.status,200);
+ assert.equal(typeof status.json().configured,"boolean");
+});
 test("static frontend is the original five-tab CRM with POS inside Finance",async()=>{
  const index=await get("/");
  assert.equal(index.response.status,200);
