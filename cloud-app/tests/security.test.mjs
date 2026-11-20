@@ -164,6 +164,20 @@ test("Nexus CRM isolated end-to-end regression: 5 workspaces, tenants, roles, re
   const listing=await expectStatus(db,a,"GET","/api/platform/companies",undefined,200);
   assert.equal(listing.items.length,2);
  });
+ await t.test("free email lab is platform-only, read-only and non-sending",async()=>{
+  await expectStatus(db,null,"GET","/api/platform/email-lab",undefined,401);
+  await expectStatus(db,b,"GET","/api/platform/email-lab",undefined,403);
+  const before=db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n;
+  const lab=await expectStatus(db,a,"GET","/api/platform/email-lab",undefined,200);
+  assert.equal(lab.mode,"cloudflare_free_preview");
+  assert.equal(lab.sendAvailable,false);
+  assert.equal(lab.emailSent,false);
+  assert.equal(lab.productionEmailReady,false);
+  assert.equal(lab.sample.to,"example-recipient@example.invalid");
+  assert.ok(lab.sample.body.includes("This is a preview"));
+  assert.ok(!JSON.stringify(lab).includes("secret"));
+  assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n,before);
+ });
  await t.test("email invitation delivery fails closed when verified sender is unavailable",async()=>{
   const before=db.raw.prepare("SELECT count(*) AS n FROM company_invitations").get().n;
   await expectStatus(db,a,"POST","/api/platform/invitations",{
