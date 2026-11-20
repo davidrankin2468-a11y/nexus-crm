@@ -948,7 +948,24 @@ async function handler(request,env){
   if(permit.meta?.changes!==1)return error("Only one email connection test every 30 minutes",429);
   const sent=await sendSelfTestEmail({env,email:user.email});
   await logAudit(db,user,path,"POST");
-  if(!sent.sent)return error("Resend did not accept the test message. Check sender and API permissions.",502);
+  if(!sent.sent){
+   // A failed provider connection test must not impose the same 30-minute
+   // cooldown as an accepted send. Keep a short retry gap to avoid spamming.
+   await db.prepare("UPDATE email_self_test_limits SET next_allowed_at=? WHERE user_id=? AND next_allowed_at=?")
+    .bind(now()+120,user.user_id,next).run();
+   const messages={
+    API_KEY_REJECTED:"Resend rejected the API key (401). Check that the key was copied completely and is active.",
+    SENDER_OR_KEY_PERMISSIONS:"Resend refused sender/domain permissions (403). Check the sending domain selected for this API key.",
+    MESSAGE_VALIDATION:"Resend rejected the message format or sender address (400/422). Check the Resend API Logs.",
+    RATE_LIMITED:"Resend temporarily rate-limited email sending (429). Wait before retrying.",
+    PROVIDER_ERROR:"Resend reported a provider service error (5xx). Retry later.",
+    DELIVERY_UNAVAILABLE:"Resend connection timed out or could not be reached.",
+    DELIVERY_UNCONFIRMED:"Resend returned no usable acceptance receipt.",
+    INVALID_ACCOUNT_EMAIL:"The signed-in owner's email is invalid for this test.",
+    SELF_TEST_NOT_CONFIGURED:"The private self-test is not fully configured."
+   };
+   return error(messages[sent.reason]||"Resend did not accept this test. Inspect Resend API Logs.",502);
+  }
   return response({ok:true,providerAccepted:true,delivered:false,recipient:user.email,
    message:"Resend accepted the test email. Check your inbox or spam; delivery is not yet confirmed."});
  }
