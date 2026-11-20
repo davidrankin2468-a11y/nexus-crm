@@ -238,5 +238,17 @@ test("integrated authenticated company-isolated checkout with real D1 POS schema
   const invalid=await requestPOS("/api/pos/sales/void",{method:"POST",body:{sale_id:saleId,confirm:"DELETE"}});
   assert.equal(invalid.status,400);
  });
+ await t.test("retry of a voided sale returns its true status without a new checkout or stock change",async()=>{
+  const oldCount=f.sql.prepare("SELECT count(*) n FROM pos_sales WHERE tenant_id='tenant-a'").get().n;
+  const stock=f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity;
+  const retry=await requestPOS("/api/pos/sales",{method:"POST",body:cart(productA,"real-sql-test-key")});
+  assert.equal(retry.status,200);
+  assert.equal(retry.data.id,saleId);
+  assert.equal(retry.data.duplicate,true);
+  assert.equal(retry.data.status,"voided");
+  assert.equal(retry.data.payment_charged,false);
+  assert.equal(f.sql.prepare("SELECT count(*) n FROM pos_sales WHERE tenant_id='tenant-a'").get().n,oldCount);
+  assert.equal(f.sql.prepare("SELECT stock_quantity FROM pos_products WHERE id=?").get(productA).stock_quantity,stock);
+ });
  f.sql.close();
 });
