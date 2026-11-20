@@ -662,3 +662,79 @@ test("isolated platform Gmail-plus pilot invitation: no customer sending, one-ti
   assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM company_invitations").get().n,1);
  }finally{globalThis.fetch=original;}
 });
+
+test("restricted Gmail staff pilot invitation sends to operator alias, activates role, rejects replay and cross-tenant access",async()=>{
+ const db=memoryDB();
+ for(const file of migrations)db.raw.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
+ const operator=client(),pilotOwner=client(),staff=client(),outsider=client(),setupCode=random();
+ const opEmail="qa-staff-pilot@gmail.com";
+ const opPw="Nexus-Test-Operator-Account-Pw-2026";
+ const ownerPw="Nexus-Test-Fictional-Company-Pw-2026";
+ const employeePw="Nexus-Test-Employee-Account-Pw-2026";
+ await db.prepare("INSERT INTO bootstrap_tokens(token_hash,created_at,expires_at) VALUES(?,?,?)")
+  .bind(sha256(setupCode),Math.floor(Date.now()/1000),Math.floor(Date.now()/1000)+300).run();
+ await expectStatus(db,operator,"POST","/api/setup",{setupCode,companyName:"Nexus Internal Platform",email:opEmail,password:opPw},201);
+ db.raw.exec(readFileSync(new URL("../migrations/005_platform_operator.sql",import.meta.url),"utf8"));
+ const env={EMAIL_INVITATION_PILOT_ENABLED:"true",EMAIL_STAFF_PILOT_ENABLED:"true",EMAIL_DELIVERY_MODE:"disabled",
+  RESEND_API_KEY:"fake-staff-pilot-credential-do-not-use",RESEND_FROM:"notifications@nexussoftwareusa.com",
+  RESEND_SENDER_DOMAIN_VERIFIED:"true",PUBLIC_APP_ORIGIN:"https://qa.nexus.example.org"};
+ const initial=await expectStatus(db,operator,"GET","/api/staff/invitations",undefined,200,{env});
+ assert.equal(initial.pilotStaffAvailable,false,"Normal platform company cannot run staff pilot");
+ await expectStatus(db,operator,"POST","/api/staff/email-invite-pilot",{password:opPw,role:"employee"},403,{env});
+ let mail=null,sendCount=0;
+ const saved=globalThis.fetch;
+ try{
+  globalThis.fetch=async (url,opts)=>{
+   assert.equal(url,"https://api.resend.com/emails");
+   assert.equal(opts.redirect,"manual");
+   mail=JSON.parse(opts.body);
+   assert.equal(mail.to.length,1);
+   assert.ok(mail.to[0].endsWith("@gmail.com"));
+   sendCount++;
+   return new Response(JSON.stringify({id:"accepted-staff-pilot-test-"+sendCount}),{status:200,headers:{"Content-Type":"application/json"}});
+  };
+  const company=await expectStatus(db,operator,"POST","/api/platform/email-invite-pilot",{password:opPw},201,{env});
+  assert.equal(company.emailSubmitted,true);
+  const companyToken=mail.text.match(/#invite=([a-f0-9]{64})/)?.[1];
+  assert.ok(companyToken);
+  await expectStatus(db,pilotOwner,"POST","/api/invitations/accept",{token:companyToken,password:ownerPw},201,{env});
+  assert.equal((await expectStatus(db,pilotOwner,"GET","/api/staff/invitations",undefined,200,{env})).pilotStaffAvailable,true);
+  assert.equal((await expectStatus(db,pilotOwner,"GET","/api/staff/invitations",undefined,200,{env:{...env,EMAIL_STAFF_PILOT_ENABLED:"false"}})).pilotStaffAvailable,false);
+  await expectStatus(db,null,"POST","/api/staff/email-invite-pilot",{password:ownerPw,role:"employee"},401,{env});
+  await expectStatus(db,operator,"POST","/api/staff/email-invite-pilot",{password:opPw,role:"employee"},403,{env});
+  await expectStatus(db,pilotOwner,"POST","/api/staff/email-invite-pilot",{password:ownerPw,role:"owner"},400,{env});
+  await expectStatus(db,pilotOwner,"POST","/api/staff/email-invite-pilot",{password:"bad",role:"employee"},403,{env});
+  await expectStatus(db,pilotOwner,"POST","/api/staff/email-invite-pilot",{password:ownerPw,role:"employee"},503,{env:{...env,EMAIL_STAFF_PILOT_ENABLED:"false"}});
+  const created=await expectStatus(db,pilotOwner,"POST","/api/staff/email-invite-pilot",{
+   role:"employee",password:ownerPw,email:"stranger@example.org"
+  },201,{env});
+  assert.equal(created.pilotOnly,true);
+  assert.equal(created.emailSubmitted,true);
+  assert.equal(created.delivered,false);
+  assert.equal(created.token,undefined);
+  assert.match(created.email,/^qa-staff-pilot\+nexus-staff-test-[a-z0-9-]+@gmail\.com$/);
+  assert.equal(sendCount,2);
+  assert.deepEqual(mail.to,[created.email]);
+  assert.ok(!JSON.stringify(created).includes("#staff="));
+  await expectStatus(db,pilotOwner,"POST","/api/staff/email-invite-pilot",{role:"employee",password:ownerPw},429,{env});
+  assert.equal(sendCount,2);
+  const entry=db.raw.prepare("SELECT tenant_id,email,role,delivery_mode,redeemed_at FROM staff_invitations WHERE id=?").get(created.id);
+  assert.equal(entry.email,created.email);
+  assert.equal(entry.role,"employee");
+  assert.equal(entry.delivery_mode,"email");
+  const staffToken=mail.text.match(/#staff=([a-f0-9]{64})/)?.[1];
+  assert.ok(staffToken);
+  await expectStatus(db,staff,"POST","/api/staff/invitations/accept",{token:staffToken,password:employeePw},201,{env});
+  const me=await expectStatus(db,staff,"GET","/api/me",undefined,200,{env});
+  assert.equal(me.user.role,"employee");
+  assert.equal(me.user.isPlatformOperator,false);
+  assert.equal(me.user.tenant_id,entry.tenant_id);
+  assert.deepEqual((await expectStatus(db,staff,"GET","/api/customers",undefined,200,{env})).items,[]);
+  await expectStatus(db,staff,"GET","/api/invoices",undefined,403,{env});
+  await expectStatus(db,staff,"GET","/api/staff/invitations",undefined,403,{env});
+  await expectStatus(db,staff,"GET","/api/platform/companies",undefined,403,{env});
+  await expectStatus(db,outsider,"POST","/api/staff/invitations/accept",{token:staffToken,password:employeePw},403,{env});
+  const users=db.raw.prepare("SELECT COUNT(*) AS n FROM users WHERE tenant_id=?").get(entry.tenant_id).n;
+  assert.equal(users,2);
+ }finally{globalThis.fetch=saved;}
+});
