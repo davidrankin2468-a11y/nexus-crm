@@ -20,6 +20,13 @@ test("fictional company email pilot is private and never enables normal customer
  assert.match(app,/private tab/);
  assert.doesNotThrow(()=>new Script(app));
 });
+test("pilot staff email form is scoped to fictional company owners in Team Access",()=>{
+ assert.match(app,/data-form="staff-email-pilot"/);
+ assert.match(app,/request\("\/api\/staff\/email-invite-pilot"/);
+ assert.match(app,/staffPilotAvailable/);
+ assert.match(app,/Confirm pilot company owner password/);
+ assert.doesNotThrow(()=>new Script(app));
+});
 test("existing five tabs are preserved; POS stays within Finance",()=>{
  assert.match(app,/const tabs=\["Dashboard","Customers","Operations","Finance","Management"\]/);
  assert.match(app,/const financeViews=\["Estimates","Invoices","Payments","Reports","POS"\]/);
