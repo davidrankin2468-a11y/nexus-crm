@@ -353,10 +353,11 @@ async function handler(request,env){
   }
   if(!accountPasswordOk(password))return error("Choose a password of 14–128 characters",400);
   const tokenHash=await hash(token),t=now();
-  const invite=await first(db,"SELECT id,company_name,owner_email FROM company_invitations WHERE token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",tokenHash,t);
+  const invite=await first(db,"SELECT id,company_name,owner_email,delivery_mode FROM company_invitations WHERE token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",tokenHash,t);
   if(!invite){
    await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403);
   }
+  if(env.REQUIRE_VERIFIED_INVITATION_EMAIL==="true"&&invite.delivery_mode!=="email")return error("Verified-email invitation required",403);
   const taken=await first(db,"SELECT id FROM users WHERE email=?",invite.owner_email);
   if(taken)return error("This email is already assigned to an account. Contact the Nexus operator.",409);
   const newUserId=crypto.randomUUID(),salt=hex(crypto.getRandomValues(new Uint8Array(16)));
@@ -397,9 +398,10 @@ async function handler(request,env){
   }
   if(!accountPasswordOk(password))return error("Choose a password of 14–128 characters",400);
   const tokenHash=await hash(token),t=now();
-  const invite=await first(db,`SELECT id,tenant_id,email,role FROM staff_invitations
+  const invite=await first(db,`SELECT id,tenant_id,email,role,delivery_mode FROM staff_invitations
    WHERE token_hash=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,tokenHash,t);
   if(!invite){await inviteRateLimit(db,request,true);return error("Invalid or expired invitation",403)}
+  if(env.REQUIRE_VERIFIED_INVITATION_EMAIL==="true"&&invite.delivery_mode!=="email")return error("Verified-email invitation required",403);
   if(await first(db,"SELECT id FROM users WHERE email=?",invite.email))return error("Account already exists for this email",409);
   const uid=crypto.randomUUID(),salt=hex(crypto.getRandomValues(new Uint8Array(16))),ph=await passwordHash(password,salt,ITERS);
   const operations=await db.batch([
@@ -904,9 +906,9 @@ async function handler(request,env){
     AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,user.tenant_id,email,now());
   if(existing)return error("An active invitation already exists for this email",409);
   const token=secret(),id=crypto.randomUUID(),t=now(),expiresAt=t+INVITE_LIFETIME;
-  await db.prepare(`INSERT INTO staff_invitations(id,tenant_id,email,role,token_hash,created_by,created_at,expires_at)
-    VALUES(?,?,?,?,?,?,?,?)`)
-   .bind(id,user.tenant_id,email,role,await hash(token),user.user_id,t,expiresAt).run();
+  await db.prepare(`INSERT INTO staff_invitations(id,tenant_id,email,role,token_hash,created_by,created_at,expires_at,delivery_mode)
+    VALUES(?,?,?,?,?,?,?,?,?)`)
+   .bind(id,user.tenant_id,email,role,await hash(token),user.user_id,t,expiresAt,delivery).run();
   if(delivery==="email"){
    const sent=await sendInvitationEmail({env,email,companyName:user.company,token,kind:"staff"});
    if(!sent.sent){
@@ -958,8 +960,8 @@ async function handler(request,env){
   const existing=await first(db,"SELECT id FROM company_invitations WHERE owner_email=? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",email,now());
   if(existing)return error("An active invitation already exists for this email; revoke it to issue another",409);
   const token=secret(),digest=await hash(token),id=crypto.randomUUID(),t=now(),expiresAt=t+INVITE_LIFETIME;
-  await db.prepare("INSERT INTO company_invitations(id,company_name,owner_email,token_hash,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?)")
-   .bind(id,company,email,digest,user.user_id,t,expiresAt).run();
+  await db.prepare("INSERT INTO company_invitations(id,company_name,owner_email,token_hash,created_by,created_at,expires_at,delivery_mode) VALUES(?,?,?,?,?,?,?,?)")
+   .bind(id,company,email,digest,user.user_id,t,expiresAt,delivery).run();
   if(delivery==="email"){
    const sent=await sendInvitationEmail({env,email,companyName:company,token,kind:"company"});
    if(!sent.sent){
