@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
+import {createHash} from "node:crypto";
 
 // Live read-only smoke checks of development preview. No credentials or test writes.
 const base="https://nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev";
@@ -25,6 +26,12 @@ test("Cloudflare integrated CRM preview is reachable and not payment-enabled",as
   app:execFileSync("git",["hash-object","cloud-app/public/assets/app.js"],{encoding:"utf8"}).trim(),
  };
  assert.deepEqual(info.blobs,blobs,"Cloudflare preview must match the current CRM and POS source code");
+ // Independently check the bytes the Worker actually serves, not just its reported manifest.
+ const servedApp=await get("/assets/app.js");
+ assert.equal(servedApp.response.status,200);
+ const actual=Buffer.from(servedApp.text);
+ const servedHash=createHash("sha1").update(`blob ${actual.length}\0`).update(actual).digest("hex");
+ assert.equal(servedHash,blobs.app,"Live frontend bytes must match tested GitHub source");
 
 });
 test("CRM D1 health is healthy on actual deployed preview",async()=>{
