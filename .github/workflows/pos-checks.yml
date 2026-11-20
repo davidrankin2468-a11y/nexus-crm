@@ -27,6 +27,8 @@ jobs:
         run: node --test tests/test_pos_sqlite_integration.mjs
       - name: Browser retry and company-scoping tests
         run: node --test tests/test_pos_retry_client.mjs
+      - name: Encrypted CRM backup round-trip and tamper rejection
+        run: node --test cloud-app/tests/backup-crypto.test.mjs
       - name: Main CRM browser JavaScript syntax
         run: node --check cloud-app/public/assets/app.js
       - name: CRM and POS shared-navigation security assertions
