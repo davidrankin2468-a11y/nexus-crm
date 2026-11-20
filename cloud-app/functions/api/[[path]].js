@@ -205,6 +205,20 @@ function pilotOwnerAlias(ownerEmail,suffix){
  if(!/^[a-z0-9-]{5,38}$/.test(suffix))return null;
  return parts[0]+"+nexus-test-"+suffix+"@gmail.com";
 }
+// Only a fictional company created through the platform Gmail pilot can
+// exercise a real staff-email invitation. Recipient is derived server-side
+// from the original operator's Gmail address; callers cannot set it.
+async function pilotStaffAlias(db,user,suffix){
+ if(user.role!=="owner"||!/^[a-z0-9-]{5,38}$/.test(suffix))return null;
+ const m=String(user.email||"").toLowerCase().match(/^([a-z0-9][a-z0-9._-]{1,60})\+nexus-test-([a-z0-9-]{5,38})@gmail\.com$/);
+ if(!m)return null;
+ const tenant=await first(db,"SELECT name FROM tenants WHERE id=?",user.tenant_id);
+ if(!tenant?.name?.startsWith("Nexus Email Pilot QA "))return null;
+ const account=m[1]+"@gmail.com";
+ const operator=await first(db,"SELECT u.id FROM platform_operators p JOIN users u ON u.id=p.user_id WHERE LOWER(u.email)=?",account);
+ if(!operator)return null;
+ return m[1]+"+nexus-staff-test-"+suffix+"@gmail.com";
+}
 async function inviteRateLimit(db,request,invalid=false){
  const key=await hash("company-invite|"+(request.headers.get("CF-Connecting-IP")||"unknown"));
  if(await throttled(db,key))return false;
@@ -896,7 +910,48 @@ async function handler(request,env){
  if(path==="/api/staff/invitations"&&method==="GET"){
   const items=await all(db,`SELECT id,email,role,created_at AS createdAt,expires_at AS expiresAt,redeemed_at AS redeemedAt,revoked_at AS revokedAt
    FROM staff_invitations WHERE tenant_id=? ORDER BY created_at DESC LIMIT 100`,user.tenant_id);
-  return response({items});
+  const pilotStaffAvailable=env.EMAIL_STAFF_PILOT_ENABLED==="true"
+   &&env.EMAIL_DELIVERY_MODE==="disabled"
+   &&invitationMailReadiness({...env,EMAIL_DELIVERY_MODE:"resend"}).ready
+   &&Boolean(await pilotStaffAlias(db,user,"sample"));
+  return response({items,pilotStaffAvailable});
+ }
+ // Private fictional-company staff email acceptance test. This route only
+ // mails a unique alias of the original platform operator's Gmail account.
+ // It never enables the normal customer/staff email delivery mode.
+ if(path==="/api/staff/email-invite-pilot"&&method==="POST"){
+  const pilotEnv={...env,EMAIL_DELIVERY_MODE:"resend"};
+  if(env.EMAIL_STAFF_PILOT_ENABLED!=="true"||env.EMAIL_DELIVERY_MODE!=="disabled"||!invitationMailReadiness(pilotEnv).ready)
+   return error("Private staff email pilot not configured",503);
+  const v=await readJson(request),role=clean(v.role,20);
+  if(!["admin","employee"].includes(role))return error("Choose an employee or admin role",400);
+  if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect owner password",403);
+  const suffix=now().toString(36)+"-"+crypto.randomUUID().slice(0,8);
+  const email=await pilotStaffAlias(db,user,suffix);
+  if(!email)return error("Staff pilot restricted to an authorized fictional Gmail pilot company",403);
+  const active=await first(db,`SELECT COUNT(*) AS n FROM staff_invitations
+    WHERE tenant_id=? AND email LIKE '%+nexus-staff-test-%@gmail.com'
+     AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?`,user.tenant_id,now());
+  if(active?.n>=3)return error("Only three active pilot staff email invitations are permitted",409);
+  const next=now()+1800;
+  const permitted=await db.prepare(`INSERT INTO email_self_test_limits(user_id,next_allowed_at) VALUES(?,?)
+   ON CONFLICT(user_id) DO UPDATE SET next_allowed_at=excluded.next_allowed_at
+   WHERE email_self_test_limits.next_allowed_at<=?`).bind(user.user_id,next,now()).run();
+  if(permitted.meta?.changes!==1)return error("Only one pilot staff email test every 30 minutes",429);
+  const id=crypto.randomUUID(),token=secret(),t=now(),expiresAt=t+INVITE_LIFETIME;
+  await db.prepare(`INSERT INTO staff_invitations(id,tenant_id,email,role,token_hash,created_by,created_at,expires_at,delivery_mode)
+    VALUES(?,?,?,?,?,?,?,?,?)`).bind(id,user.tenant_id,email,role,await hash(token),user.user_id,t,expiresAt,"email").run();
+  const sent=await sendInvitationEmail({env:pilotEnv,email,companyName:user.company,token,kind:"staff"});
+  if(!sent.sent){
+   await db.prepare("UPDATE staff_invitations SET revoked_at=? WHERE id=? AND tenant_id=? AND redeemed_at IS NULL AND revoked_at IS NULL")
+    .bind(now(),id,user.tenant_id).run();
+   await db.prepare("UPDATE email_self_test_limits SET next_allowed_at=? WHERE user_id=? AND next_allowed_at=?")
+    .bind(now()+120,user.user_id,next).run();
+   return error("Resend did not accept the pilot staff email; invitation revoked",502);
+  }
+  await logAudit(db,user,path,"POST");
+  return response({ok:true,pilotOnly:true,emailSubmitted:true,providerAccepted:true,delivered:false,
+   id,email,role,expiresAt,message:"Staff pilot email submitted to your Gmail. Activate the invited role from a private tab."},201);
  }
  if(path==="/api/staff/invitations"&&method==="POST"){
   const v=await readJson(request),email=clean(v.email,254).toLowerCase(),role=clean(v.role,20);
