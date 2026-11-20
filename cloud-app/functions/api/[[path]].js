@@ -1,4 +1,4 @@
-import {invitationMailReadiness,sendInvitationEmail} from "./invitation-mailer.js";
+import {invitationMailReadiness,sendInvitationEmail,freeInvitationEmailLab} from "./invitation-mailer.js";
 // Nexus CRM cloud alpha API. Deployed with Cloudflare Pages Functions; no secrets in source.
 const ITERS=100000, WEEK=604800, STATUSES=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
 const H={"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer","X-Frame-Options":"DENY","Strict-Transport-Security":"max-age=31536000","Cross-Origin-Resource-Policy":"same-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(), payment=()","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"};
@@ -930,6 +930,11 @@ async function handler(request,env){
  }
  if(path.startsWith("/api/platform/")){
   if(!(await platformOperator(db,user)))return error("Nexus platform operator access required",403);
+ }
+ // A read-only, zero-cost preview. No email transport, invitation token,
+ // customer address, or database mutation is exposed here.
+ if(path==="/api/platform/email-lab"&&method==="GET"){
+  return response(freeInvitationEmailLab(env));
  }
  if(path==="/api/platform/invitations"&&method==="GET"){
   const items=await all(db,`SELECT id,company_name AS companyName,owner_email AS email,created_at AS createdAt,
