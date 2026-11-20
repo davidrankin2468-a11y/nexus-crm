@@ -53,7 +53,18 @@ test("owner-only connection test is explicit and does not use invitation tokens"
  assert.equal(calls,1);
  assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"malformed",fetcher}),{sent:false,reason:"INVALID_ACCOUNT_EMAIL"});
  assert.equal(calls,1);
- assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"person@example.org",fetcher:async()=>({ok:false,status:401})}),{sent:false,reason:"DELIVERY_REJECTED"});
+ for(const [status,reason] of [
+  [401,"API_KEY_REJECTED"],[403,"SENDER_OR_KEY_PERMISSIONS"],
+  [400,"MESSAGE_VALIDATION"],[422,"MESSAGE_VALIDATION"],
+  [429,"RATE_LIMITED"],[503,"PROVIDER_ERROR"],[418,"DELIVERY_REJECTED"]
+ ]){
+  const result=await sendSelfTestEmail({env:selfEnv,email:"person@example.org",
+   fetcher:async()=>({ok:false,status,json:async()=>({name:"validation_error",message:"do not reveal arbitrary provider text or secret"})})});
+  assert.deepEqual(result,{sent:false,reason});
+  assert.ok(!JSON.stringify(result).includes("secret"));
+  assert.ok(!JSON.stringify(result).includes("do not reveal"));
+ }
+
  assert.deepEqual(await sendSelfTestEmail({env:selfEnv,email:"person@example.org",fetcher:async()=>{throw Error("connection");}}),{sent:false,reason:"DELIVERY_UNAVAILABLE"});
 });
 test("onboarding email remains disabled until sender/domain/provider are configured",()=>{
