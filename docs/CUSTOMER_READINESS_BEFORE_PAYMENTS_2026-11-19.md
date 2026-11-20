@@ -4,6 +4,12 @@
 **Release decision: NOT YET CUSTOMER-PRODUCTION READY.**  
 **Scope:** `feature/nexus-pos-crm-foundation`; isolated Cloudflare Worker `nexus-crm-pos-integrated-preview`; development/staging D1. No real customer charges or subscription enrollments.
 
+## November 20, 2026: scheduled encrypted backup independent restore — PASSED
+
+The real 12:00 AM Central R2 archive was decrypted, SHA-256 and AES-GCM authenticated, and restored into a separate Cloudflare D1 database. Independently verified **35 tables, 37 indexes, 12 triggers, 104 archived records, database quick_check=ok, and zero foreign-key violations**. The verified private recovery database was retained for audit; all temporary restore Workers, the Queue and failed test D1 were cleaned up. The original backup Worker, its five bindings, private subdomain setting, and exact midnight cron pair were restored unchanged. No real customer payment capabilities were activated.
+
+See [complete actual R2 recovery PASS report](R2_ACTUAL_ARCHIVE_RESTORE_DRILL_2026-11-20.md). This clears the **actual scheduled-backup restore drill** gate; independent encryption-key escrow and routine recovery rehearsals still remain for commercial operations.
+
 ## November 20, 2026: customer-onboarding readiness update
 
 **Verified today**
@@ -12,7 +18,7 @@
 - Added a separate, operator-only company invitation pilot route `POST /api/platform/email-invite-pilot` and button in **Management → Companies → Business Email Lab**. It sends a fictional new company invitation exclusively to a unique `+nexus-test-` alias of the authenticated platform operator's own Gmail. The recipient is determined server-side; callers cannot choose another recipient. It requires operator login, CSRF, account password and the existing 30-minute outbound test rate limit.
 - For the test route only, the mailer uses a temporary configured Resend environment. **`EMAIL_DELIVERY_MODE=disabled` remains in force for normal customer and staff email.** This is not a public signup flow and creates no paid subscription.
 - Automated tests verify the Gmail alias restriction, invitation token only in outbound email (not API response), separate tenant creation, one-time redemption, replay denial, and no access to platform-only company lists. Full [CRM/POS security and integration workflow](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44733102573) and [Cloudflare integrated live smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44733102515) **passed** on the deployed preview source. Previous F2 fault-injection tests also passed.
-- Cloudflare staging D1 `PRAGMA quick_check` is `ok`. First scheduled encrypted R2 snapshot is present at `snapshots/v1/2026/11/20/...` (56,379 bytes; created around midnight Central). The backup Worker attempts an encrypted object readback at creation. **Independent restoration of this exact live snapshot into a clean isolated database is still untested.**
+- Cloudflare staging D1 `PRAGMA quick_check` is `ok`. First scheduled encrypted R2 snapshot is present at `snapshots/v1/2026/11/20/...` (56,379 bytes; created around midnight Central). The backup Worker attempts an encrypted object readback at creation. **Independent restoration of this exact encrypted scheduled archive PASSED** in a clean isolated D1 recovery database on November 20, 2026: 35 tables, 37 indexes, 12 triggers, 104 rows, AES-GCM/SHA-256 checks, `PRAGMA quick_check=ok`, and zero foreign-key violations.
 - All preexisting Cloudflare Worker bindings inherited, `RESEND_API_KEY` protected, and R2 midnight backup schedules unchanged.
 
 **Owner's next acceptance step**
@@ -20,7 +26,7 @@
 2. Confirm Gmail receives that invitation addressed to a newly generated plus alias. Open the one-time link in a **private/incognito** browser tab, choose a new test account password, activate the fictional company, and verify it has no records or platform-operator privileges.
 3. Report any failure. Only when this manual step passes can the email invitation customer-facing release gate advance. Full staff invitation UAT and real recipient ownership controls remain to be completed separately.
 
-**Remaining commercial blockers:** real authenticated live browser/mobile UAT for two companies; separate test of actual R2 archive restore; Square Sandbox provider charge, verified webhook and refund flows per authorized merchant (no production charges); subscriptions/tenant entitlements; privacy/terms/refund/tax/support and incident policies; independent security review; owner launch approval. Existing Vercel/Supabase data remains separate from the Cloudflare/D1 private pilot.
+**Remaining commercial blockers:** real authenticated live browser/mobile UAT for two companies; Square Sandbox provider charge, verified webhook and refund flows per authorized merchant (no production charges); subscriptions/tenant entitlements; privacy/terms/refund/tax/support and incident policies; independent security review; owner launch approval. Existing Vercel/Supabase data remains separate from the Cloudflare/D1 private pilot.
 
 ## Owner-approved sequence
 
@@ -59,7 +65,7 @@
 | Login, MFA, recovery | Existing tests and owner manual tests | **Passed within test scope**; enforce/verify paying-owner MFA, email ownership and recovery before public signup |
 | New company self-service/onboarding | Invitation APIs exist but no verified outbound email or proof-of-control acceptance flow | **BLOCKED** until email sender and onboarding UAT verified |
 | Licensing | Draft $49/$99/$149 plans only, billing disabled | **BLOCKED**: subscriptions, entitlement enforcement, renewals, cancellation |
-| Backup readiness | Verified R2 manual encrypted export and fictional isolated restore | **PARTIAL**: first midnight scheduled object and exact real-archive isolated restore still unverified |
+| Backup readiness | Verified R2 manual encrypted export and fictional isolated restore | **PASS**: first midnight scheduled encrypted R2 archive was independently restored and checked (35 tables / 104 rows); independent key escrow and continuing operational drills remain open |
 | Privacy/support/deletion | Policies and support workflow not published and reviewed | **BLOCKED** for commercial launch |
 | Custom domains, responsive UI/accessibility | Staging preview and prior mobile smoke | **PARTIAL**: owner domain and complete mobile/accessibility UAT required |
 | Square production payment | Disabled in live preview, Sandbox regressions pass | **BLOCKED** intentionally; do not enable before full customer/business release |
@@ -81,4 +87,4 @@
 - [Customer payment segregation and fail-closed tests](../tests/test_customer_payment_launch_gates.mjs)
 - [Launch gate checklist](CLOUDFLARE_COMMERCIAL_RELEASE_GATE.md)
 
-**Next practical work:** verified email invitation/onboarding first, then full real-backup restore/monitoring. Both payment pathways can be implemented and tested in isolation while these gates are addressed, but remain incapable of charging real customers until the owner gives a separate approval.
+**Next practical work:** verified email invitation/onboarding next, alongside ongoing backup monitoring and independent key escrow. Both payment pathways can be implemented and tested in isolation while these gates are addressed, but remain incapable of charging real customers until the owner gives a separate approval.
