@@ -225,26 +225,47 @@ async function posCommit(){
 }
 
 async function loadPos(){
- try{const [p,sales]=await Promise.all([request("/api/pos/products"),request("/api/pos/sales")]);s.posProducts=p.items;s.posSales=sales.items;s.posError="";}
- catch(e){s.posError=e.message||"POS unavailable";}
+ try{
+  const [p,sales]=await Promise.all([request("/api/pos/products"),request("/api/pos/sales")]);
+  s.posProducts=p.items;s.posSales=sales.items;s.posError="";
+ }catch(e){s.posError=e.message||"POS unavailable";}
+ try{
+  const result=await request("/api/pos/square/sandbox-attempts");
+  s.squareAttempts=result.items||[];s.squareAttemptsError="";
+ }catch(e){s.squareAttempts=[];s.squareAttemptsError=e.message||"Sandbox attempt list unavailable";}
  draw();
 }
 function posContent(){
  const nav=sectionNav(["Checkout","Inventory","Customers","Reports"],s.posView,"posview","POS sections");
  const pending=posPendingRead();
  const pendingAlert=pending?panel("Checkout awaiting confirmation",'<p>A previous attempt may already be recorded. Retry with the same checkout reference; do not create a second sale.</p><button data-action="pos-retry" type="button" '+(s.posBusy?"disabled":"")+'>Retry pending sale safely</button>'):"";
- const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert;
+ const squareCard=panel("Square Sandbox connection",'<p>Check Square Sandbox securely from this signed-in CRM dashboard. No cards are charged.</p><button type="button" data-action="square-check">Check Square Sandbox</button>'+(s.squareResult?'<p role="status">'+safe(s.squareResult)+'</p>':""));
+ const warn=panel("Nexus POS · Test transactions",'<p>Company-scoped records. Sales remain pending/unpaid until payment is separately verified. No credit card is charged and no tax calculation is performed.</p>')+pendingAlert+squareCard;
  if(s.posError)return nav+warn+panel("Connection error",safe(s.posError)+' <button data-action="pos-refresh">Retry</button>');
  if(s.posView==="Customers")return nav+warn+panel("CRM customers",table(["Name","Email"],s.customers.map(x=>'<tr><td>'+safe(x.name)+'</td><td>'+safe(x.email)+'</td></tr>')));
  if(s.posView==="Reports"){
   const pendingTotal=s.posSales.reduce((a,x)=>a+((x.status==="pending"||x.status==="recorded")?Number(x.total_cents):0),0);
-  const rows=s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td><td>'+(x.status==="pending"?'<button type="button" data-pos-void="'+safe(x.id)+'">Void unpaid</button>':"—")+'</td></tr>');
+  const rows=s.posSales.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.customer_name||"Walk-in")+'</td><td>'+safe(x.status)+'</td><td>'+money(x.total_cents/100)+'</td><td>'+
+   (x.status==="pending"?(Number(x.total_cents)>0?'<button type="button" data-square-prepare="'+safe(x.id)+'">Prepare Sandbox</button> ':"")+'<button type="button" data-pos-void="'+safe(x.id)+'">Void unpaid</button>':"—")+'</td></tr>');
   const records=panel("Recorded POS activity",'<h3>Unpaid / unverified recorded total: '+money(pendingTotal/100)+'</h3><p>This report does not confirm card settlement or tax compliance.</p>'+table(["Receipt","CRM customer","Status","Amount","Action"],rows));
   const exportPanel=s.account?.role==="owner"?panel("Encrypted POS backup",'<p>Download company-scoped inventory, sales, sale lines, stock movements, refunds, and event records encrypted with a backup passphrase on this device. No password or card data is exported. Independent restoration is not implemented yet.</p>'+
     '<form data-form="pos-download" class="gridform"><label>Backup passphrase<input required type="password" name="backupPassphrase" minlength="12" maxlength="256" autocomplete="new-password"></label>'+
     '<label>Repeat backup passphrase<input required type="password" name="confirmPassphrase" minlength="12" maxlength="256" autocomplete="new-password"></label>'+
     '<div class="actionrow"><button type="submit" class="primary">Download encrypted POS records</button></div></form>'):"";
-  return nav+warn+records+exportPanel;
+  const sqAttempts=s.squareAttempts||[];
+  const sqRows=sqAttempts.map(a=>'<tr><td>'+safe(a.id)+'</td><td>'+safe(a.sale_id)+'</td><td>'+safe(a.status)+'</td><td>'+money(a.amount_cents/100)+'</td><td>'+
+    (a.status==="prepared"?'<button type="button" data-square-submit="'+safe(a.id)+'">Run fake payment</button>':"—")+'</td></tr>');
+  const sqOptions=sqAttempts.filter(a=>["prepared","completed_unreconciled","unknown","reconciled"].includes(a.status))
+    .map(a=>'<option value="'+safe(a.id)+'">'+safe(a.sale_id)+' ('+safe(a.status)+')</option>').join("");
+  const sqPanel=panel("Square Sandbox payment testing",
+    '<p>Use Prepare Sandbox on an unpaid sale above. Then Run fake payment uses only Square’s published test token, never a real card. The server independently verifies the resulting payment before it marks that same company’s sale complete.</p>'+
+    (s.squareAttemptsError?'<p>'+safe(s.squareAttemptsError)+'</p>':"")+
+    (sqRows.length?table(["Attempt ID","Sale ID","Status","Amount","Action"],sqRows):'<p>No Sandbox payment attempts for this company yet.</p>')+
+    '<h3>Verify an existing Sandbox payment</h3><p>For recovery only: enter the payment ID from a completed Square Sandbox transaction. This does not create a payment.</p>'+
+    '<form data-form="square-reconcile" class="gridform"><label>Attempt<select name="attempt_id" required>'+sqOptions+'</select></label>'+
+    '<label>Square Sandbox payment ID<input name="payment_id" required minlength="8" maxlength="200" pattern="[A-Za-z0-9_-]+"></label>'+
+    '<button type="submit" class="primary" '+(sqOptions?"":'disabled')+'>Verify and reconcile</button></form>');
+  return nav+warn+records+sqPanel+exportPanel;
  }
  if(s.posView==="Inventory")return nav+warn+editorPanel("Add product",'<form data-form="pos-product" class="gridform"><label>SKU<input required name="sku" pattern="[-A-Za-z0-9_]+" maxlength="60"></label><label>Product name<input required name="name" maxlength="200"></label><label>Price ($)<input required name="price" type="number" min="0" step=".01" max="1000000"></label><label>Starting stock<input required name="stock_quantity" type="number" min="0" step="1" max="1000000"></label><button class="primary" type="submit">Save product</button></form>')+panel("Inventory",table(["SKU","Name","Price","Stock"],s.posProducts.map(p=>'<tr><td>'+safe(p.sku)+'</td><td>'+safe(p.name)+'</td><td>'+money(p.price_cents/100)+'</td><td>'+safe(p.stock_quantity)+'</td></tr>')));
  const rows=Object.entries(s.posCart).map(([id,q])=>({p:s.posProducts.find(x=>x.id===id),q})).filter(x=>x.p&&x.q>0);
@@ -735,7 +756,7 @@ function draw(){
  $("mount").innerHTML='<div class="layout"><aside class="sidebar"><div class="tenant">'+safe(s.account.company)+'</div>'+
  (s.account.role==="owner"?tabs:tabs.filter(t=>t!=="Management"&&(t!=="Finance"||s.account.role!=="employee")).concat("Account")).map(t=>'<button class="nav '+(s.page===t?"active":"")+'" data-page="'+t+'">'+(t==="Account"?"My Account":t)+'</button>').join("")+
  '</aside><main class="content"><div class="content-heading"><div><h1>'+safe(s.page)+'</h1></div>'+
- '<div class="actionrow"><button data-action="refresh">Refresh data</button></div></div><div id="view"></div></main></div>';
+ '<div class="actionrow"><button data-action="refresh">Refresh data</button><button data-action="logout">Sign out</button></div></div><div id="view"></div></main></div>';
  currentTab();
  if(s.account.role==="employee"&&s.page!=="Account"){
   // Employees have read-only operational access; server RBAC enforces this as well.
@@ -899,6 +920,36 @@ document.addEventListener("click",async e=>{
   finally{b.disabled=false}
   return;
  }
+ if(b.dataset.squarePrepare){
+  b.disabled=true;
+  try{
+   const sale=b.dataset.squarePrepare;
+   const key="qatest_"+sale.replace(/-/g,"");
+   const a=await request("/api/pos/square/sandbox-prepare","POST",{sale_id:sale,idempotency_key:key});
+   await loadPos();notice("Sandbox attempt "+a.attempt_id+" prepared for this unpaid sale. No payment submitted.");
+  }catch(err){notice("Sandbox preparation: "+err.message)}
+  return;
+ }
+ if(b.dataset.squareSubmit){
+  if(!confirm("Run a FAKE Square Sandbox card payment for this pending test sale? No real card or money will be used."))return;
+  b.disabled=true;
+  try{
+   const r=await request("/api/pos/square/sandbox-submit","POST",{attempt_id:b.dataset.squareSubmit,confirm:"RUN SANDBOX TEST PAYMENT"});
+   if(!r.provider_completed||!r.payment_id)throw Error("Provider completion not yet confirmed. Check attempts; do not resubmit.");
+   const done=await request("/api/pos/square/sandbox-reconcile","POST",{attempt_id:r.attempt_id,payment_id:r.payment_id});
+   await loadPos();notice(done.reconciled?"Fake Square Sandbox payment verified and sale completed. No real charge.":"Sandbox receipt requires review.");
+  }catch(err){await loadPos();notice("Sandbox test needs review: "+err.message+". Do not run a second payment. Use manual verification or contact support.");}
+  return;
+ }
+  if(b.dataset.action==="square-check"){
+  b.disabled=true;s.squareResult="Checking Square Sandbox...";draw();
+  try{const res=await fetch("/api/pos/square/sandbox-connectivity",{method:"GET",credentials:"same-origin",cache:"no-store",headers:{"Accept":"application/json"}});const data=await res.json();
+   if(res.ok&&data.connected)s.squareResult="Square Sandbox connected. Location verified; merchant "+(data.merchantVerified?"verified.":"not included in response.")+" No charges made.";
+   else if(res.status===401){let crmOk=false;try{await request("/api/me");crmOk=true}catch{}s.squareResult=crmOk?"CRM sign-in works, but POS authorization failed.":"CRM sign-in session unavailable.";}
+   else s.squareResult="Square Sandbox status: "+(data.reason||data.error||"HTTP "+res.status);
+  }catch(err){s.squareResult="Square check could not complete: "+err.message}
+  draw();return;
+ }
  if(b.dataset.action==="pos-refresh"){await loadPos();return}
  if(b.dataset.action==="license-refresh"){await loadLicenseInfo();return}
  if(b.dataset.action==="pos-retry"){await posCommit();return}
@@ -919,7 +970,11 @@ document.addEventListener("submit",async e=>{
  e.preventDefault();const type=f.dataset.form,data=Object.fromEntries(new FormData(f));
  const btn=f.querySelector('button[type="submit"]');if(btn)btn.disabled=true;
  try{
-  if(type==="pos-product"){
+  if(type==="square-reconcile"){
+   const result=await request("/api/pos/square/sandbox-reconcile","POST",{attempt_id:data.attempt_id,payment_id:String(data.payment_id||"").trim()});
+   await loadPos();notice(result.reconciled?"Square Sandbox payment independently verified and sale reconciled. No real charge.":"Sandbox payment not reconciled.");return;
+  }
+   if(type==="pos-product"){
    const price=Number(data.price),stock=Number(data.stock_quantity);
    if(!Number.isFinite(price)||price<0||!Number.isSafeInteger(Math.round(price*100))||!Number.isSafeInteger(stock)||stock<0)throw Error("Invalid product");
    await request("/api/pos/products","POST",{sku:data.sku,name:data.name,price_cents:Math.round(price*100),stock_quantity:stock});
@@ -1079,8 +1134,7 @@ document.addEventListener("submit",async e=>{
    data.amount=Number(data.amount);
    const url=s.editingJob?"/api/jobs/"+encodeURIComponent(s.editingJob):"/api/jobs";
    await request(url,s.editingJob?"PATCH":"POST",data);s.editingJob=null;
-   // F1: only refresh the affected jobs and dashboard, not unrelated management resources.
-   // F2: a confirmed write cannot be reported as a failed save due to a read failure.
+   // F1: refresh only affected business records. F2: never report a confirmed write as failed because a follow-up read failed.
    const results=await Promise.allSettled([request("/api/jobs"),request("/api/dashboard")]);
    if(results[0].status==="fulfilled")s.jobs=results[0].value.items;
    if(results[1].status==="fulfilled")s.dashboard=results[1].value;
