@@ -21,6 +21,16 @@
 - **Passing verification:** [full POS and CRM regression](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44662309052) and [live Cloudflare smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44662308882).
 - **Still blocked on owner/vendor configuration:** Verified transactional sender domain and provider account/API key. A provider accepting a message for delivery is **not** proof the email reached the mailbox; run real delivery and link-acceptance UAT after setup.
 
+## Evening hardening — Nov 19, 2026
+
+- Added **additive, non-destructive** database migration `015_invitation_delivery_provenance.sql` on staging D1, adding `delivery_mode` (`manual` or `email`) to company and staff invitations, defaulting older links to `manual`. No active invitations existed when applied and no business records were edited.
+- When `REQUIRE_VERIFIED_INVITATION_EMAIL="true"` is later configured, **legacy manual company and staff invitations are refused at redemption**, even if they were generated before verified-email onboarding was enforced. This closes a bypass of the earlier create-only policy. Pilot mode remains unchanged while the flag is not enabled.
+- Added isolated regression cases verifying old manual invitations cannot be redeemed under the strict commercial flag, that attempted redemptions leave the invitation unredeemed, and that previously tested opt-in email invites record their delivery method. All test data is fictional.
+- Staged and deployed the compatible seven-module Cloudflare CRM+POS preview Worker, preserving all seven existing bindings including MFA and Square sandbox secrets. Staging D1 `PRAGMA quick_check` returned `ok` with no foreign-key violations.
+- Latest [CRM/POS security regressions](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44668705345) and [read-only live Cloudflare smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44668705301) **passed**.
+- Midnight backup Worker and schedule are **unchanged** (`0 5 * * *` and `0 6 * * *` UTC, guarded to one midnight America/Chicago execution). The first daily automatic encrypted snapshot is **not yet verified**.
+- **Not a claim of verified recipient ownership:** Email sender/domain still not connected. Provider acceptance alone is not proof of delivery to or control of the mailbox. Do not enable strict commercial onboarding until these checks and owner acceptance have passed.
+
 ## Customer-facing gate — evidence and remaining checks
 
 | Gate | Current evidence | Decision |
