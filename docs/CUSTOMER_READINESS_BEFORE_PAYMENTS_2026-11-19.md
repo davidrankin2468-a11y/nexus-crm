@@ -4,6 +4,24 @@
 **Release decision: NOT YET CUSTOMER-PRODUCTION READY.**  
 **Scope:** `feature/nexus-pos-crm-foundation`; isolated Cloudflare Worker `nexus-crm-pos-integrated-preview`; development/staging D1. No real customer charges or subscription enrollments.
 
+## November 20, 2026: customer-onboarding readiness update
+
+**Verified today**
+- `nexussoftwareusa.com` registered and verified for Resend, with Cloudflare Email Routing successfully receiving business email in the owner's Gmail.
+- The restricted Resend sender self-test from `notifications@nexussoftwareusa.com` **arrived in the owner's Gmail Inbox** (owner-supplied screenshot, 12:50 AM Central). Actual delivery is verified for this specific self-test, not for invitations to external customers.
+- Added a separate, operator-only company invitation pilot route `POST /api/platform/email-invite-pilot` and button in **Management → Companies → Business Email Lab**. It sends a fictional new company invitation exclusively to a unique `+nexus-test-` alias of the authenticated platform operator's own Gmail. The recipient is determined server-side; callers cannot choose another recipient. It requires operator login, CSRF, account password and the existing 30-minute outbound test rate limit.
+- For the test route only, the mailer uses a temporary configured Resend environment. **`EMAIL_DELIVERY_MODE=disabled` remains in force for normal customer and staff email.** This is not a public signup flow and creates no paid subscription.
+- Automated tests verify the Gmail alias restriction, invitation token only in outbound email (not API response), separate tenant creation, one-time redemption, replay denial, and no access to platform-only company lists. Full [CRM/POS security and integration workflow](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44733102573) and [Cloudflare integrated live smoke](https://github.com/davidrankin2468-a11y/nexus-crm/actions/runs/44733102515) **passed** on the deployed preview source. Previous F2 fault-injection tests also passed.
+- Cloudflare staging D1 `PRAGMA quick_check` is `ok`. First scheduled encrypted R2 snapshot is present at `snapshots/v1/2026/11/20/...` (56,379 bytes; created around midnight Central). The backup Worker attempts an encrypted object readback at creation. **Independent restoration of this exact live snapshot into a clean isolated database is still untested.**
+- All preexisting Cloudflare Worker bindings inherited, `RESEND_API_KEY` protected, and R2 midnight backup schedules unchanged.
+
+**Owner's next acceptance step**
+1. In the private [integrated preview](https://nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev/), sign in as the platform operator, open **Management → Companies → Business Email Lab**, and use **Email a pilot company invitation to my Gmail** with the Nexus CRM account password.
+2. Confirm Gmail receives that invitation addressed to a newly generated plus alias. Open the one-time link in a **private/incognito** browser tab, choose a new test account password, activate the fictional company, and verify it has no records or platform-operator privileges.
+3. Report any failure. Only when this manual step passes can the email invitation customer-facing release gate advance. Full staff invitation UAT and real recipient ownership controls remain to be completed separately.
+
+**Remaining commercial blockers:** real authenticated live browser/mobile UAT for two companies; separate test of actual R2 archive restore; Square Sandbox provider charge, verified webhook and refund flows per authorized merchant (no production charges); subscriptions/tenant entitlements; privacy/terms/refund/tax/support and incident policies; independent security review; owner launch approval. Existing Vercel/Supabase data remains separate from the Cloudflare/D1 private pilot.
+
 ## Owner-approved sequence
 
 1. **Customer experience before payments.** Finish and verify company invitations, true email ownership/activation, owner-admin-employee roles, account recovery, accessible desktop/mobile workflow, company data isolation, and full CRM/POS usability. This phase stays invite-only and test-data-only.
