@@ -1,3 +1,4 @@
+import {invitationMailReadiness,sendInvitationEmail} from "./invitation-mailer.js";
 // Nexus CRM cloud alpha API. Deployed with Cloudflare Pages Functions; no secrets in source.
 const ITERS=100000, WEEK=604800, STATUSES=["Planned","Scheduled","In Progress","On Hold","Completed","Cancelled"];
 const H={"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer","X-Frame-Options":"DENY","Strict-Transport-Security":"max-age=31536000","Cross-Origin-Resource-Policy":"same-origin","Permissions-Policy":"camera=(), microphone=(), geolocation=(), payment=()","Content-Security-Policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"};
@@ -890,6 +891,10 @@ async function handler(request,env){
  if(path==="/api/staff/invitations"&&method==="POST"){
   const v=await readJson(request),email=clean(v.email,254).toLowerCase(),role=clean(v.role,20);
   if(!emailOk(email)||!["admin","employee"].includes(role))return error("Valid staff email and role required",400);
+  const delivery=clean(v.deliveryMode||"manual",20);
+  if(!["manual","email"].includes(delivery))return error("Invalid invitation delivery mode",400);
+  if(delivery==="manual"&&env.REQUIRE_VERIFIED_INVITATION_EMAIL==="true")return error("Verified email delivery required for onboarding",403);
+  if(delivery==="email"&&!invitationMailReadiness(env).ready)return error("Verified invitation email delivery not configured",503);
   if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect owner password",403);
   if(await first(db,"SELECT id FROM users WHERE email=?",email))return error("An account already exists for this email",409);
   const active=await first(db,`SELECT COUNT(*) AS n FROM staff_invitations
@@ -902,6 +907,14 @@ async function handler(request,env){
   await db.prepare(`INSERT INTO staff_invitations(id,tenant_id,email,role,token_hash,created_by,created_at,expires_at)
     VALUES(?,?,?,?,?,?,?,?)`)
    .bind(id,user.tenant_id,email,role,await hash(token),user.user_id,t,expiresAt).run();
+  if(delivery==="email"){
+   const sent=await sendInvitationEmail({env,email,companyName:user.company,token,kind:"staff"});
+   if(!sent.sent){
+    await db.prepare("UPDATE staff_invitations SET revoked_at=? WHERE id=? AND tenant_id=? AND redeemed_at IS NULL AND revoked_at IS NULL").bind(now(),id,user.tenant_id).run();
+    return error("Invitation email not accepted; invitation revoked",503);
+   }
+   return response({ok:true,id,email,role,expiresAt,delivery:"email",emailSubmitted:true},201);
+  }
   return response({ok:true,id,email,role,expiresAt,token},201);
  }
  if(path.startsWith("/api/staff/invitations/")&&path.endsWith("/revoke")&&method==="POST"){
@@ -934,6 +947,10 @@ async function handler(request,env){
  if(path==="/api/platform/invitations"&&method==="POST"){
   const v=await readJson(request),company=clean(v.companyName,150),email=clean(v.email,254).toLowerCase();
   if(!company||company.length>150||!emailOk(email))return error("Enter a company name and a valid owner email",400);
+  const delivery=clean(v.deliveryMode||"manual",20);
+  if(!["manual","email"].includes(delivery))return error("Invalid invitation delivery mode",400);
+  if(delivery==="manual"&&env.REQUIRE_VERIFIED_INVITATION_EMAIL==="true")return error("Verified email delivery required for onboarding",403);
+  if(delivery==="email"&&!invitationMailReadiness(env).ready)return error("Verified invitation email delivery not configured",503);
   if(!(await verifySensitivePassword(db,user,v.password)))return error("Incorrect account password",403);
   if(await first(db,"SELECT id FROM users WHERE email=?",email))return error("This email already has an account",409);
   const active=await first(db,"SELECT COUNT(*) AS n FROM company_invitations WHERE redeemed_at IS NULL AND revoked_at IS NULL AND expires_at>?",now());
@@ -943,7 +960,16 @@ async function handler(request,env){
   const token=secret(),digest=await hash(token),id=crypto.randomUUID(),t=now(),expiresAt=t+INVITE_LIFETIME;
   await db.prepare("INSERT INTO company_invitations(id,company_name,owner_email,token_hash,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?)")
    .bind(id,company,email,digest,user.user_id,t,expiresAt).run();
-  // Token is returned exactly once and never retained in browser storage.
+  if(delivery==="email"){
+   const sent=await sendInvitationEmail({env,email,companyName:company,token,kind:"company"});
+   if(!sent.sent){
+    await db.prepare("UPDATE company_invitations SET revoked_at=? WHERE id=? AND redeemed_at IS NULL AND revoked_at IS NULL").bind(now(),id).run();
+    return error("Invitation email not accepted; invitation revoked",503);
+   }
+   // The secret link is sent only to the configured email provider, not the API client.
+   return response({ok:true,id,companyName:company,email,expiresAt,delivery:"email",emailSubmitted:true},201);
+  }
+  // Manual tokens remain for fictional-data testing, never general customer onboarding.
   return response({ok:true,id,companyName:company,email,expiresAt,token},201);
  }
  if(path.startsWith("/api/platform/invitations/")&&path.endsWith("/revoke")&&method==="POST"){
