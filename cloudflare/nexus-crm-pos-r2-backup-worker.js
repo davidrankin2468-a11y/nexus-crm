@@ -108,7 +108,20 @@ export async function createEncryptedBackup(env,now=new Date()){
  return result;
 }
 
+// Cloudflare cron triggers use UTC. Two trigger hours cover midnight Central
+// across both CST (06:00 UTC) and CDT (05:00 UTC). Exactly one fires at local midnight.
+export function isCentralMidnight(scheduledTime){
+ const time=Number(scheduledTime);
+ if(!Number.isFinite(time))return false;
+ const hour=new Intl.DateTimeFormat("en-GB",{timeZone:"America/Chicago",hour:"2-digit",hourCycle:"h23"}).format(new Date(time));
+ return hour==="00";
+}
+
 export default {
  async fetch(){return new Response("Not found",{status:404,headers:{"Cache-Control":"no-store"}});},
- async scheduled(_controller,env){const out=await createEncryptedBackup(env);console.log("Encrypted R2 backup verified",out.key,out.tableCount,out.rowCount);}
+ async scheduled(controller,env){
+  if(!isCentralMidnight(controller.scheduledTime))return;
+  const out=await createEncryptedBackup(env,new Date(controller.scheduledTime));
+  console.log("Encrypted R2 backup verified",out.key,out.tableCount,out.rowCount);
+ }
 };
