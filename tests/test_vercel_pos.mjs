@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import products from '../api/pos/products.js';
-import sales from '../api/pos/sales.js';
-import receipts from '../api/pos/receipts.js';
-import status from '../api/pos/status.js';
+import posRoute from '../api/pos/[...route].js';
+// The application now uses one consolidated POS route. Exercise each path through it.
+const forRoute=name=>(req,res)=>posRoute({...req,query:{...(req.query||{}),route:name}},res);
+const products=forRoute('products');
+const sales=forRoute('sales');
+const receipts=forRoute('receipts');
+const status=forRoute('status');
 import {validProduct,validSale} from '../lib/nexus-pos-server.js';
 
 const companyA='11111111-1111-4111-8111-111111111111',companyB='22222222-2222-4222-8222-222222222222';
