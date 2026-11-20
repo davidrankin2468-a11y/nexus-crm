@@ -5,7 +5,7 @@
 **Private R2 bucket:** `nexus-crm-pos-secure-backups`  
 **Scheduled backup Worker:** `nexus-crm-pos-r2-backups`  
 **Source:** `cloudflare/nexus-crm-pos-r2-backup-worker.js`  
-**Schedule:** `0 9 * * *` UTC, daily (3 a.m. CST / 4 a.m. CDT).  
+**Schedule:** Two UTC triggers, `0 5 * * *` and `0 6 * * *`. The Worker checks `America/Chicago` using the scheduled timestamp and runs exactly one backup daily at **12:00 a.m. Central** (CST and CDT), skipping the other trigger.  
 **Health monitor:** Nexus R2 Backup Health, daily conditional notification at 6 a.m. America/Chicago.
 
 ## Current deployment state
@@ -33,7 +33,7 @@ An earlier manual object also exists; only the `verified-manual-` archive has th
 
 **Not yet completed:** Actual restore of the `verified-manual-` encrypted data file into an isolated destination (including key escrow and full recovery procedure); observation and verification of the first full scheduled `snapshots/v1/` archive; off-account backup and key copies.
 
-**Schedule retained:** `0 9 * * *` UTC — first expected daily run **November 20, 2026, 03:00 CST**, with the existing daily backup health monitor inspecting its results.
+**Schedule updated:** `0 5 * * *` plus `0 6 * * *` UTC, guarded to exactly one midnight Central backup. First expected daily run **November 20, 2026, 12:00 a.m. CST (06:00 UTC)**. The existing 6:00 a.m. Central backup-health monitor remains in place and is configured to recognize the new schedule. Regression tests cover standard/daylight saving transitions.
 
 ---
 
