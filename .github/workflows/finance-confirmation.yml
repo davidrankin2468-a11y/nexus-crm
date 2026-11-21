@@ -9,6 +9,7 @@ on:
       - 'tests/job-site-fields.test.cjs'
       - 'cloud-app/functions/api/[[path]].js'
       - 'cloud-app/migrations/2026-11-job-site-fields.sql'
+      - 'cloud-app/schema.sql'
       - '.github/workflows/finance-confirmation.yml'
   workflow_dispatch:
 jobs:
