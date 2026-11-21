@@ -745,6 +745,9 @@ function currentTab(){
     input("title","Job title",editing?.title||"","text",true)+
     '<label>Amount ($)<input name="amount" type="number" min="0" max="1000000000" step=".01" required value="'+safe(editing?.amount??0)+'"></label>'+
     input("scheduledDate","Scheduled date",editing?.scheduledDate||"","date")+
+    input("siteAddress","Property / job-site address",editing?.siteAddress||"")+
+    input("siteInstructions","Site instructions",editing?.siteInstructions||"")+
+    '<label>Crew lead<select name="crewLeadId"><option value="">Unassigned</option>'+s.employees.filter(e=>e.status==="Active"||e.id===editing?.crewLeadId).map(e=>'<option value="'+safe(e.id)+'" '+(e.id===editing?.crewLeadId?"selected":"")+'>'+safe(e.name)+'</option>').join("")+'</select></label>'+
     '<label>Status<select name="status">'+jobStatusOptions(editing?.status||"Planned")+'</select></label>'+
     '<div class="actionrow"><button class="primary" type="submit">'+(editing?"Save job":"Create job")+'</button>'+
     (editing?'<button type="button" data-action="cancel-edit">Cancel</button>':"")+'</div></form>':

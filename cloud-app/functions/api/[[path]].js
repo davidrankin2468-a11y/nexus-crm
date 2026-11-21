@@ -53,7 +53,7 @@ function checkCustomer(v){
 }
 function checkJob(v){
  const amount=Number(v.amount);
- const x={title:clean(v.title,180),customerId:clean(v.customerId,100),status:clean(v.status||"Planned",30),scheduledDate:clean(v.scheduledDate,10)};
+ const x={title:clean(v.title,180),customerId:clean(v.customerId,100),status:clean(v.status||"Planned",30),scheduledDate:clean(v.scheduledDate,10),siteAddress:clean(v.siteAddress,300),siteInstructions:clean(v.siteInstructions,1500),crewLeadId:clean(v.crewLeadId,100)};
  if(!x.title||!x.customerId)throw new Error("Job requires customer and title");
  if(!STATUSES.includes(x.status))throw new Error("Invalid job status");
  if(!Number.isFinite(amount)||amount<0||amount>1e9)throw new Error("Invalid job amount");
@@ -503,21 +503,23 @@ async function handler(request,env){
   return response({ok:true});
  }
  if(path==="/api/jobs"&&method==="GET"){
-  return response({items:await all(db,"SELECT j.id,j.title,j.status,j.amount_cents/100.0 AS amount,j.scheduled_date AS scheduledDate,j.customer_id AS customerId,c.name AS customerName FROM jobs j JOIN customers c ON c.id=j.customer_id AND c.tenant_id=j.tenant_id WHERE j.tenant_id=? ORDER BY j.created_at DESC LIMIT 500",user.tenant_id)});
+  return response({items:await all(db,"SELECT j.id,j.title,j.status,j.amount_cents/100.0 AS amount,j.scheduled_date AS scheduledDate,j.customer_id AS customerId,c.name AS customerName,j.site_address AS siteAddress,j.site_instructions AS siteInstructions,j.crew_lead_id AS crewLeadId FROM jobs j JOIN customers c ON c.id=j.customer_id AND c.tenant_id=j.tenant_id WHERE j.tenant_id=? ORDER BY j.created_at DESC LIMIT 500",user.tenant_id)});
  }
  if(path==="/api/jobs"&&method==="POST"){
   const x=checkJob(await readJson(request)),c=await first(db,"SELECT id FROM customers WHERE id=? AND tenant_id=?",x.customerId,user.tenant_id);
   if(!c)return error("Customer must belong to your company");
+  if(x.crewLeadId&&!(await first(db,"SELECT id FROM employees WHERE id=? AND tenant_id=? AND status=\'Active\'",x.crewLeadId,user.tenant_id)))return error("Choose an active crew lead from your company");
   const id=crypto.randomUUID(),t=now();
-  await db.prepare("INSERT INTO jobs(id,tenant_id,customer_id,title,status,amount_cents,scheduled_date,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(id,user.tenant_id,x.customerId,x.title,x.status,x.amountCents,x.scheduledDate,t,t).run();
+  await db.prepare("INSERT INTO jobs(id,tenant_id,customer_id,title,status,amount_cents,scheduled_date,site_address,site_instructions,crew_lead_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,user.tenant_id,x.customerId,x.title,x.status,x.amountCents,x.scheduledDate,x.siteAddress,x.siteInstructions,x.crewLeadId||null,t,t).run();
   return response({ok:true,id},201);
  }
  if(path.startsWith("/api/jobs/")&&method==="PATCH"){
-  const id=decodeURIComponent(path.slice(10)),old=await first(db,"SELECT id,title,status,customer_id AS customerId,amount_cents/100.0 AS amount,scheduled_date AS scheduledDate FROM jobs WHERE id=? AND tenant_id=?",id,user.tenant_id);
+  const id=decodeURIComponent(path.slice(10)),old=await first(db,"SELECT id,title,status,customer_id AS customerId,amount_cents/100.0 AS amount,scheduled_date AS scheduledDate,site_address AS siteAddress,site_instructions AS siteInstructions,crew_lead_id AS crewLeadId FROM jobs WHERE id=? AND tenant_id=?",id,user.tenant_id);
   if(!old)return error("Job not found",404);
   const x=checkJob({...old,...await readJson(request)}),c=await first(db,"SELECT id FROM customers WHERE id=? AND tenant_id=?",x.customerId,user.tenant_id);
   if(!c)return error("Customer must belong to your company");
-  await db.prepare("UPDATE jobs SET title=?,status=?,customer_id=?,amount_cents=?,scheduled_date=?,updated_at=? WHERE id=? AND tenant_id=?").bind(x.title,x.status,x.customerId,x.amountCents,x.scheduledDate,now(),id,user.tenant_id).run();
+  if(x.crewLeadId&&!(await first(db,"SELECT id FROM employees WHERE id=? AND tenant_id=? AND status=\'Active\'",x.crewLeadId,user.tenant_id)))return error("Choose an active crew lead from your company");
+  await db.prepare("UPDATE jobs SET title=?,status=?,customer_id=?,amount_cents=?,scheduled_date=?,site_address=?,site_instructions=?,crew_lead_id=?,updated_at=? WHERE id=? AND tenant_id=?").bind(x.title,x.status,x.customerId,x.amountCents,x.scheduledDate,x.siteAddress,x.siteInstructions,x.crewLeadId||null,now(),id,user.tenant_id).run();
   return response({ok:true});
  }
  if(path==="/api/employees"&&method==="GET"){
