@@ -1,7 +1,7 @@
 import {handleSquareSandboxWebhook} from "./square-sandbox-webhook.js";
 import {verifySandboxRefund,inspectSandboxRefund} from "./square-sandbox-refund-verification.js";
 void verifySandboxRefund;
-import {onRequest as crmApi} from "./crm-api.js";
+import {onRequest as crmApi,permitted} from "./crm-api.js";
 import {onRequest as posApi} from "./pos-api.js";
 import {HTML,APP,CSS,PRINT} from "./assets.js";
 const headers={"X-Robots-Tag":"noindex, nofollow","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff","X-Frame-Options":"DENY","Cache-Control":"no-store","Strict-Transport-Security":"max-age=31536000"};
@@ -20,6 +20,14 @@ export default {
    const assert=(name,pass)=>tests.push({name,pass:Boolean(pass)});
    const good={id:"sandbox_refund_12345678",payment_id:"sandbox_payment_12345678",status:"COMPLETED",amount_money:{amount:50,currency:"USD"},location_id:"sandbox_location_12345678"};
    const expected={paymentId:good.payment_id,amountCents:50,locationId:good.location_id};
+   assert("employee_cannot_create_customer",!permitted("employee","POST","/api/customers"));
+   assert("employee_cannot_view_finances",!permitted("employee","GET","/api/payments"));
+   assert("employee_cannot_manage_platform",!permitted("employee","GET","/api/platform/companies"));
+   assert("admin_cannot_manage_platform",!permitted("admin","GET","/api/platform/companies"));
+   assert("admin_can_manage_customers",permitted("admin","POST","/api/customers"));
+   assert("employee_can_view_customers",permitted("employee","GET","/api/customers"));
+   assert("unknown_role_denied",!permitted("unknown","GET","/api/customers"));
+   assert("owner_can_manage_customers",permitted("owner","POST","/api/customers"));
    assert("valid_completed_refund",inspectSandboxRefund(good,expected)===null);
    assert("reject_pending_refund",inspectSandboxRefund({...good,status:"PENDING"},expected)==="REFUND_NOT_COMPLETED");
    assert("reject_wrong_payment",inspectSandboxRefund({...good,payment_id:"wrong"},expected)==="PAYMENT_MISMATCH");
@@ -43,7 +51,12 @@ export default {
      ["no_duplicate_tenant_skus","SELECT tenant_id,sku FROM pos_products GROUP BY tenant_id,sku HAVING COUNT(*)>1",r=>r.length===0],
      ["no_invalid_company_invitations","SELECT id FROM company_invitations WHERE expires_at<=created_at OR (redeemed_at IS NOT NULL AND revoked_at IS NOT NULL)",r=>r.length===0],
      ["no_invalid_staff_invitations","SELECT id FROM staff_invitations WHERE expires_at<=created_at OR (redeemed_at IS NOT NULL AND revoked_at IS NOT NULL)",r=>r.length===0],
-     ["no_duplicate_license_features","SELECT plan_code,feature_key FROM license_entitlements GROUP BY plan_code,feature_key HAVING COUNT(*)>1",r=>r.length===0]
+     ["no_duplicate_license_features","SELECT plan_code,feature_key FROM license_entitlements GROUP BY plan_code,feature_key HAVING COUNT(*)>1",r=>r.length===0],
+     ["onboarding_no_orphan_staff_invites","SELECT s.id FROM staff_invitations s LEFT JOIN tenants t ON t.id=s.tenant_id WHERE t.id IS NULL",r=>r.length===0],
+     ["onboarding_no_orphan_jobs","SELECT j.id FROM jobs j LEFT JOIN tenants t ON t.id=j.tenant_id WHERE t.id IS NULL",r=>r.length===0],
+     ["onboarding_no_cross_tenant_jobs","SELECT j.id FROM jobs j JOIN customers c ON c.id=j.customer_id WHERE j.tenant_id!=c.tenant_id",r=>r.length===0],
+     ["onboarding_no_cross_tenant_sale_items","SELECT i.id FROM pos_sale_items i JOIN pos_sales s ON s.id=i.sale_id WHERE i.tenant_id!=s.tenant_id",r=>r.length===0],
+     ["onboarding_no_cross_tenant_refunds","SELECT r.id FROM pos_refunds r JOIN pos_sales s ON s.id=r.sale_id WHERE r.tenant_id!=s.tenant_id",r=>r.length===0]
     ];
     for(const [name,sql,check] of queries){try{const r=await env.DB.prepare(sql).all();assert(name,check(r.results||[]));}catch{assert(name,false)}}
    }catch{assert("database_available",false)}
