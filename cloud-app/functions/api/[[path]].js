@@ -1135,7 +1135,10 @@ export async function onRequest({request,env}){
   if(request.method!=="GET"&&result.status>=200&&result.status<300&&
    /^\/api\/(customers|jobs|employees|appointments|estimates|invoices|payments|backups|security|sales|platform|staff)(\/|$)/.test(new URL(request.url).pathname)){
    const user=await current(request,env.DB).catch(()=>null);
-   if(user)await logAudit(env.DB,user,new URL(request.url).pathname,request.method);
+   if(user){
+    try{await logAudit(env.DB,user,new URL(request.url).pathname,request.method)}
+    catch(auditError){console.error("Nexus CRM audit logging failed:",String(auditError?.message||auditError).slice(0,180))}
+   }
   }
   return result;
  }
