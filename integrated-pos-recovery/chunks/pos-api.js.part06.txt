@@ -1,0 +1,22 @@
+im()||v.name.length>200||!Number.isSafeInteger(v.price_cents)||v.price_cents<0||v.price_cents>100000000||!Number.isSafeInteger(v.stock_quantity)||v.stock_quantity<0||v.stock_quantity>1000000)return json({error:"Invalid product"},400);
+   const id=crypto.randomUUID(),t=now();
+   const writes=[db.prepare("INSERT INTO pos_products(id,tenant_id,sku,name,price_cents,stock_quantity,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)").bind(id,tenant,v.sku,v.name.trim(),v.price_cents,v.stock_quantity,t,t)];
+   if(v.stock_quantity>0){
+    writes.push(db.prepare("INSERT INTO pos_inventory_movements(id,tenant_id,product_id,sale_id,quantity_delta,reason,created_at) VALUES(?,?,?,?,?,'restock',?)").bind(crypto.randomUUID(),tenant,id,null,v.stock_quantity,t));
+   }
+   // Both rows commit together, so opening stock always has an auditable movement.
+   await db.batch(writes);
+   return json({id},201);
+  }
+  if(path==="/api/pos/sales/void"&&method==="POST"){
+   // This records cancellation of an UNPAID checkout only: never a Square refund.
+   const v=await bodyOf(request);
+   if(typeof v.sale_id!=="string"||!/^[a-f0-9]{8}-[a-f0-9-]{27,31}$/i.test(v.sale_id)||v.confirm!=="VOID UNPAID SALE")
+    return json({error:"Valid unpaid receipt ID and confirmation required"},400);
+   const existing=await db.prepare("SELECT status FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+   if(!existing)return json({error:"Sale not found for this company"},404);
+   if(existing.status==="voided")return json({id:v.sale_id,status:"voided",duplicate:true,payment_charged:false,refund_processed:false});
+   if(existing.status!=="pending")return json({error:"Only pending/unpaid sales can be voided"},409);
+   const paymentAttempt=await db.prepare("SELECT status FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status!='failed' LIMIT 1").bind(tenant,v.sale_id).first();
+   if(paymentAttempt&&paymentAttempt.status!=="failed")return json({error:"Square payment attempt exists; resolve its status before voiding this sale"},409);
+   // D1 trigger 013 atomically restore
