@@ -1,0 +1,8 @@
+enant_id,product_id,sale_id,quantity_delta,reason,created_at) VALUES(?,?,?,?,?,'sale',?)").bind(crypto.randomUUID(),tenant,p.id,saleId,-quantity,t));
+   }
+   await db.batch(stmts);
+   return json({id:saleId,total_cents:subtotal,status:"pending",payment_charged:false,recorded_only:true},201);
+  }
+  return json({error:"Not found"},404);
+ }catch(e){if(/UNIQUE constraint failed/.test(String(e)))return json({error:"Duplicate SKU or request"},409);if(/CHECK constraint failed/.test(String(e)))return json({error:"Stock or amount constraint failed"},409);return json({error:"POS request failed"},500)}
+}
