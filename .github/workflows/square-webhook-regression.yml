@@ -1,20 +1,32 @@
-name: Square Sandbox webhook regression
+name: Nexus CRM POS security regression
 on:
   push:
     branches: [feature/nexus-pos-crm-foundation]
-    paths:
-      - 'cloud-app/functions/api/square-sandbox-webhook.js'
-      - 'cloud-app/functions/api/square-d1-reconciliation.js'
-      - 'cloud-app/tests/square-webhook.test.mjs'
-      - '.github/workflows/square-webhook-regression.yml'
+  pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   webhook-tests:
+    name: Square Sandbox webhook regression
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check cloud-app/functions/api/square-sandbox-webhook.js
+          node --check cloud-app/functions/api/square-d1-reconciliation.js
+          node --check cloud-app/tests/square-webhook.test.mjs
       - name: Run webhook regression tests
         run: node --test cloud-app/tests/square-webhook.test.mjs
