@@ -9,6 +9,8 @@ test("unresolved Square payment attempts block unpaid sale void",()=>{
  assert.ok(start>=0&&end>start);
  const route=source.slice(start,end);
  assert.match(route,/pos_square_sandbox_payment_attempts/);
+ assert.match(route,/status!=\x27failed\x27 LIMIT 1/);
+ assert.match(route,/WHERE tenant_id=\? AND sale_id=\?/);
  assert.match(route,/paymentAttempt\.status!=="failed"/);
  assert.match(route,/return json\(\{error:"Square payment attempt exists; resolve its status before voiding this sale"\},409\)/);
  assert.ok(route.indexOf("paymentAttempt.status")<route.indexOf("UPDATE pos_sales SET status='voided'"));
