@@ -1,0 +1,14 @@
+ db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+   if(!sale||sale.total_cents!==100||sale.refunded_cents!==0||sale.status!=="completed")return json({error:"Only a completed, unrefunded $1.00 sandbox sale is eligible"},409);
+   const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
+   if(!payment)return json({error:"Reconciled sandbox payment not found"},409);
+   const key="nexus_sandbox_refund_"+v.sale_id.replace(/-/g,"");
+   let response;
+   try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:100,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS one dollar sandbox refund test"})});}
+   catch{return json({error:"Square Sandbox refund request timed out. Retry the SAME sale; idempotency prevents duplicate refunds."},503);}
+   if(response.status>=300&&response.status<400)return json({error:"Square redirect blocked"},502);
+   const data=await response.json().catch(()=>null);
+   if(!response.ok)return json({error:"Square Sandbox refund request rejected",providerStatus:response.status,providerErrors:(data?.errors||[]).map(x=>x.code).slice(0,3)},409);
+   const refund=data?.refund;
+   if(!refund?.id||refund.payment_id!==payment.provider_payment_id||refund.amount_money?.amount!==100||refund.amount_money?.currency!=="USD")return json({error:"Square refund response mismatch; investigate before retry"},502);
+   if(refund.status!=="COMPLETED")return json({created:true,recorded:false,refund_id:refund.id,status:refund.status,message:"Square refund not yet completed; retry the same test later to verify."
