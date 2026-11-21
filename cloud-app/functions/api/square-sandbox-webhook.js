@@ -1,3 +1,4 @@
+import {handleSquareSandboxAttempt} from "./square-d1-reconciliation.js";
 // Square Sandbox webhook intake: authenticate before persisting; never mutate financial ledger.
 const response=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
 export async function handleSquareSandboxWebhook(request,env){
@@ -23,5 +24,17 @@ export async function handleSquareSandboxWebhook(request,env){
  // Record authenticated event for reconciliation. Never trust payload as proof of payment/refund.
  const now=Math.floor(Date.now()/1000);
  await env.DB.prepare("INSERT OR IGNORE INTO payment_webhook_events(provider,event_id,received_at,outcome) VALUES(?,?,?,'received')").bind("square",event.event_id,now).run();
+ // Only known Square Sandbox payments are eligible. The webhook itself is never proof of payment.
+ const paymentId=event.data?.object?.payment?.id;
+ if(["payment.created","payment.updated"].includes(event.type)&&typeof paymentId==="string"&&/^[A-Za-z0-9_-]{8,200}$/.test(paymentId)){
+  const attempt=await env.DB.prepare("SELECT id,tenant_id FROM pos_square_sandbox_payment_attempts WHERE provider_payment_id=? AND status IN ('completed_unreconciled','unknown','reconciled')").bind(paymentId).first();
+  if(attempt){
+   try{
+    const result=await handleSquareSandboxAttempt({path:"/api/pos/square/sandbox-reconcile",method:"POST",db:env.DB,env,tenant:attempt.tenant_id,body:{attempt_id:attempt.id,payment_id:paymentId}});
+    const detail=await result.json();
+    if(result.ok&&detail.reconciled)await env.DB.prepare("UPDATE payment_webhook_events SET outcome='reconciled',processed_at=? WHERE provider='square' AND event_id=? AND outcome='received'").bind(now,event.event_id).run();
+   }catch{ /* Remain received for investigation; do not accept unverified payments. */ }
+  }
+ }
  return response({received:true});
 }
