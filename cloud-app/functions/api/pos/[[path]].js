@@ -1,3 +1,4 @@
+import {verifySandboxRefund} from "./square-sandbox-refund-verification.js";
 // Nexus POS development API: separate Pages route; never handles card details.
 const json=(v,status=200)=>new Response(JSON.stringify(v),{status,headers:{"Content-Type":"application/json","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
 const now=()=>Math.floor(Date.now()/1000);
@@ -20,6 +21,17 @@ export async function onRequest({request,env}){
    if(request.headers.get("X-Nexus-CSRF")!==user.csrf_token)return json({error:"CSRF token required"},403);
   }
   const tenant=user.tenant_id;
+  if(path==="/api/pos/square/sandbox-refund-verify"&&method==="POST"){
+   const v=await bodyOf(request);
+   if(!/^[A-Za-z0-9_-]{8,200}$/.test(v.refund_id||"")||!/^[a-f0-9-]{36}$/i.test(v.sale_id||""))return json({error:"Invalid refund or sale ID"},400);
+   const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+   if(!sale||sale.status!=="completed")return json({error:"Completed sale not found"},404);
+   const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
+   if(!payment)return json({error:"Verified Square payment not found"},409);
+   const result=await verifySandboxRefund({refundId:v.refund_id,paymentId:payment.provider_payment_id,amountCents:v.amount_cents,env});
+   if(!result.verified)return json({verified:false,reason:result.reason},409);
+   return json({verified:true,refund_id:v.refund_id,sale_id:v.sale_id,amount_cents:v.amount_cents,recorded:false});
+  }
   if(path==="/api/pos/export"&&method==="GET"){
    // Owner-only business record export. The browser encrypts it with a separate
    // user-chosen passphrase. No passwords, sessions, tokens, or card data included.
