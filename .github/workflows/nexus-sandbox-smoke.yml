@@ -1,0 +1,41 @@
+name: Nexus CRM POS sandbox smoke checks
+on:
+  push:
+    branches: [recover-integrated-pos-worker-2026-11-21]
+    paths: ['.github/workflows/nexus-sandbox-smoke.yml']
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify deployed regression and sandbox readiness (read-only)
+        shell: bash
+        env:
+          BASE: https://nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --max-time 30 "$BASE/regression-status" -o regression.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('regression.json'))
+          print('Regression:',d.get('passed'),'/',d.get('total'),'pass=',d.get('pass'))
+          assert d.get('pass') is True and d.get('passed')==d.get('total')
+          PY
+          curl --fail --show-error --silent --max-time 30 "$BASE/api/square/sandbox-readiness" -o readiness.json
+          python3 - <<'PY'
+          import json
+          d=json.load(open('readiness.json'))
+          print('Sandbox readiness:', {k:v for k,v in d.items() if k not in ('token','secret')})
+          assert d.get('liveChargesEnabled') is False, 'Live charges must remain disabled'
+          assert d.get('paymentProcessing') is False, 'Sandbox preview must not enable live payment processing'
+          PY
+      - name: Preserve test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-sandbox-smoke
+          path: |
+            regression.json
+            readiness.json
+          if-no-files-found: ignore
