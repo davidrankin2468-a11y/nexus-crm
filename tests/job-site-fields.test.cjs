@@ -20,3 +20,10 @@ test("crew lead is checked against same-tenant active employee",()=>{
 test("job form exposes new fields",()=>{
  for(const field of ["siteAddress","siteInstructions","crewLeadId"])assert.ok(ui.includes('name="'+field+'"')||ui.includes('input("'+field+'"'));
 });
+
+test("fresh cloud database schema includes job-site fields without needing an ALTER migration",()=>{
+ const schema=fs.readFileSync(path.join(__dirname,"../cloud-app/schema.sql"),"utf8");
+ const jobs=schema.slice(schema.indexOf("CREATE TABLE IF NOT EXISTS jobs ("),schema.indexOf("CREATE INDEX IF NOT EXISTS idx_jobs_tenant"));
+ for(const field of ["site_address","site_instructions","crew_lead_id"])assert.match(jobs,new RegExp("\\b"+field+"\\b"));
+ assert.match(schema,/CREATE INDEX IF NOT EXISTS idx_jobs_crew_lead/);
+});

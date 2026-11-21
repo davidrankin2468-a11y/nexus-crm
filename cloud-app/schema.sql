@@ -57,9 +57,13 @@ CREATE TABLE IF NOT EXISTS jobs (
   status TEXT NOT NULL CHECK(status IN ('Planned','Scheduled','In Progress','On Hold','Completed','Cancelled')),
   amount_cents INTEGER NOT NULL DEFAULT 0 CHECK(amount_cents>=0),
   scheduled_date TEXT NOT NULL DEFAULT '',
+  site_address TEXT NOT NULL DEFAULT '' CHECK(length(site_address)<=300),
+  site_instructions TEXT NOT NULL DEFAULT '' CHECK(length(site_instructions)<=1500),
+  crew_lead_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY(tenant_id, customer_id) REFERENCES customers(tenant_id,id)
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_tenant ON jobs(tenant_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_customer ON jobs(tenant_id,customer_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_crew_lead ON jobs(tenant_id,crew_lead_id);
