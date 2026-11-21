@@ -1,0 +1,20 @@
+name: Square Sandbox webhook regression
+on:
+  push:
+    branches: [feature/nexus-pos-crm-foundation]
+    paths:
+      - 'cloud-app/functions/api/square-sandbox-webhook.js'
+      - 'cloud-app/functions/api/square-d1-reconciliation.js'
+      - 'cloud-app/tests/square-webhook.test.mjs'
+      - '.github/workflows/square-webhook-regression.yml'
+  workflow_dispatch:
+jobs:
+  webhook-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run webhook regression tests
+        run: node --test cloud-app/tests/square-webhook.test.mjs
