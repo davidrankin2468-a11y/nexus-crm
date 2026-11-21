@@ -6,6 +6,9 @@ on:
       - 'cloud-app/public/assets/app.js'
       - 'tests/finance-confirmation.test.cjs'
       - 'tests/finance-server-invariants.test.cjs'
+      - 'tests/job-site-fields.test.cjs'
+      - 'cloud-app/functions/api/[[path]].js'
+      - 'cloud-app/migrations/2026-11-job-site-fields.sql'
       - '.github/workflows/finance-confirmation.yml'
   workflow_dispatch:
 jobs:
@@ -19,6 +22,8 @@ jobs:
         with:
           node-version: '22'
       - name: Finance confirmation fault-injection regression
-        run: node --test tests/finance-confirmation.test.cjs tests/finance-server-invariants.test.cjs
+        run: node --test tests/finance-confirmation.test.cjs tests/finance-server-invariants.test.cjs tests/job-site-fields.test.cjs
       - name: JavaScript syntax
-        run: node --check cloud-app/public/assets/app.js
+        run: |
+          node --check cloud-app/public/assets/app.js
+          node --input-type=module --check < 'cloud-app/functions/api/[[path]].js'
