@@ -22,6 +22,6 @@ export async function handleSquareSandboxWebhook(request,env){
  if(typeof event?.event_id!=="string"||event.event_id.length>200||!/^[A-Za-z0-9_-]+$/.test(event.event_id)||typeof event.type!=="string")return response({error:"Invalid event"},400);
  // Record authenticated event for reconciliation. Never trust payload as proof of payment/refund.
  const now=Math.floor(Date.now()/1000);
- await env.DB.prepare("INSERT OR IGNORE INTO payment_webhook_events(provider,event_id,received_at,outcome) VALUES(?,?,?,'received')").bind("square_sandbox",event.event_id,now).run();
+ await env.DB.prepare("INSERT OR IGNORE INTO payment_webhook_events(provider,event_id,received_at,outcome) VALUES(?,?,?,'received')").bind("square",event.event_id,now).run();
  return response({received:true});
 }
