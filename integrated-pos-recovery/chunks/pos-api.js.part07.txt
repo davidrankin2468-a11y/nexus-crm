@@ -1,0 +1,24 @@
+s inventory exactly once on pending -> voided.
+   const result=await db.prepare("UPDATE pos_sales SET status='voided' WHERE tenant_id=? AND id=? AND status='pending'").bind(tenant,v.sale_id).run();
+   const changed=Number(result?.meta?.changes??result?.changes??0);
+   if(changed!==1){
+    const latest=await db.prepare("SELECT status FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+    if(latest?.status==="voided")return json({id:v.sale_id,status:"voided",duplicate:true,payment_charged:false,refund_processed:false});
+    return json({error:"Sale state changed; refresh before retrying"},409);
+   }
+   return json({id:v.sale_id,status:"voided",inventory_restored:true,payment_charged:false,refund_processed:false});
+  }
+  if(path==="/api/pos/sales"&&method==="GET"){
+   const r=await db.prepare("SELECT s.id,s.customer_id,c.name AS customer_name,s.status,s.subtotal_cents,s.tax_cents,s.total_cents,s.created_at FROM pos_sales s LEFT JOIN customers c ON c.id=s.customer_id AND c.tenant_id=s.tenant_id WHERE s.tenant_id=? ORDER BY s.created_at DESC LIMIT 100").bind(tenant).all();
+   return json({items:r.results});
+  }
+  if(path==="/api/pos/sales"&&method==="POST"){
+   const v=await bodyOf(request);
+   if(typeof v.idempotency_key!=="string"||! /^[a-zA-Z0-9_-]{8,100}$/.test(v.idempotency_key)||!Array.isArray(v.items)||v.items.length<1||v.items.length>50||!Number.isSafeInteger(v.tax_cents)||v.tax_cents!==0)return json({error:"Invalid sale"},400);
+   // An optional POS customer MUST be from the same authenticated CRM company.
+   // The browser cannot override tenant_id, price, or company ownership.
+   const customerId=v.customer_id===null||v.customer_id===undefined||v.customer_id===""?null:v.customer_id;
+   if(customerId!==null){
+    if(typeof customerId!=="string"||!/^[a-f0-9]{8}-[a-f0-9-]{27,31}$/i.test(customerId))return json({error:"Invalid CRM customer reference"},400);
+    const approved=await db.prepare("SELECT id FROM customers WHERE tenant_id=? AND id=?").bind(tenant,customerId).first();
+    if(!approved)return json({error:"CRM customer not found
