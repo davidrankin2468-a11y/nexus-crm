@@ -39,12 +39,15 @@ export async function onRequest({request,env}){
    if(env.SQUARE_ENVIRONMENT!=="sandbox"||!env.SQUARE_SANDBOX_ACCESS_TOKEN||!env.SQUARE_SANDBOX_LOCATION_ID)return json({error:"Sandbox not configured"},503);
    const v=await bodyOf(request);
    if(!/^[a-f0-9-]{36}$/i.test(v.sale_id||"")||v.confirm!=="RUN PARTIAL SANDBOX REFUND"||!Number.isSafeInteger(v.amount_cents)||v.amount_cents<1)return json({error:"Explicit sandbox confirmation required"},400);
+   if(!/^[a-f0-9-]{36}$/i.test(v.operation_id||""))return json({error:"Stable refund operation ID required; retry with the same ID"},400);
+   const key="nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase();
+   const prior=await db.prepare("SELECT tenant_id,sale_id,amount_cents,provider_refund_id FROM pos_refunds WHERE idempotency_key=?").bind(key).first();
+   if(prior)return prior.tenant_id===tenant&&prior.sale_id===v.sale_id&&prior.amount_cents===v.amount_cents?json({verified:true,recorded:true,duplicate:true,refund_id:prior.provider_refund_id,sale_id:v.sale_id,amount_cents:v.amount_cents}):json({error:"Refund operation ID already used for a different refund"},409);
    const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
    if(!sale||v.amount_cents>=sale.total_cents||v.amount_cents>sale.total_cents-sale.refunded_cents||!["completed","partially_refunded"].includes(sale.status))return json({error:"Only a completed sandbox sale with sufficient balance is eligible for a partial refund"},409);
    const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
    if(!payment)return json({error:"Reconciled sandbox payment not found"},409);
-   if(!/^[a-f0-9-]{36}$/i.test(v.operation_id||""))return json({error:"Stable refund operation ID required; retry with the same ID"},400);
-   const key="nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase();
+
    let response;
    try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:v.amount_cents,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS partial sandbox refund test"})});}
    catch{return json({error:"Square Sandbox refund request timed out. Retry the SAME sale; idempotency prevents duplicate refunds."},503);}
@@ -54,12 +57,13 @@ export async function onRequest({request,env}){
    const refund=data?.refund;
    if(!refund?.id||refund.payment_id!==payment.provider_payment_id||refund.amount_money?.amount!==v.amount_cents||refund.amount_money?.currency!=="USD")return json({error:"Square refund response mismatch; investigate before retry"},502);
    if(refund.status!=="COMPLETED")return json({created:true,recorded:false,refund_id:refund.id,status:refund.status,message:"Square refund not yet completed; retry the same test later to verify."},202);
-   const verifyRequest=new Request(new URL("/api/pos/square/sandbox-refund-verify",request.url),{method:"POST",headers:request.headers,body:JSON.stringify({refund_id:refund.id,sale_id:v.sale_id,amount_cents:v.amount_cents})});
+   const verifyRequest=new Request(new URL("/api/pos/square/sandbox-refund-verify",request.url),{method:"POST",headers:request.headers,body:JSON.stringify({refund_id:refund.id,sale_id:v.sale_id,amount_cents:v.amount_cents,operation_id:v.operation_id})});
    return onRequest({request:verifyRequest,env});
   }
   if(path==="/api/pos/square/sandbox-refund-verify"&&method==="POST"){
    const v=await bodyOf(request);
    if(!/^[A-Za-z0-9_-]{8,200}$/.test(v.refund_id||"")||!/^[a-f0-9-]{36}$/i.test(v.sale_id||"")||!Number.isSafeInteger(v.amount_cents)||v.amount_cents<1)return json({error:"Invalid refund, sale, or amount"},400);
+   if(v.operation_id&&!/^[a-f0-9-]{36}$/i.test(v.operation_id))return json({error:"Invalid refund operation ID"},400);
    const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
    if(!sale||!["completed","partially_refunded","refunded"].includes(sale.status))return json({error:"Paid sale not found"},404);
    const existing=await db.prepare("SELECT tenant_id,sale_id,amount_cents FROM pos_refunds WHERE provider_refund_id=?").bind(v.refund_id).first();
@@ -69,7 +73,7 @@ export async function onRequest({request,env}){
    if(!payment)return json({error:"Verified Square payment not found"},409);
    const result=await verifySandboxRefund({refundId:v.refund_id,paymentId:payment.provider_payment_id,amountCents:v.amount_cents,env});
    if(!result.verified)return json({verified:false,reason:result.reason},409);
-   const stamp=now(),refundKey="square_refund_"+v.refund_id;
+   const stamp=now(),refundKey=v.operation_id?"nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase():"square_refund_"+v.refund_id;
    await db.batch([
     db.prepare("INSERT INTO pos_refunds(id,tenant_id,sale_id,amount_cents,reason,provider_refund_id,idempotency_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM pos_refunds WHERE provider_refund_id=?) AND EXISTS(SELECT 1 FROM pos_sales WHERE tenant_id=? AND id=? AND status IN ('completed','partially_refunded') AND total_cents-refunded_cents>=?)").bind(crypto.randomUUID(),tenant,v.sale_id,v.amount_cents,"Verified Square Sandbox refund",v.refund_id,refundKey,stamp,v.refund_id,tenant,v.sale_id,v.amount_cents),
     db.prepare("UPDATE pos_sales SET refunded_cents=COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0),status=CASE WHEN COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0)=total_cents THEN 'refunded' WHEN COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0)>0 THEN 'partially_refunded' ELSE status END WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id,tenant,v.sale_id,tenant,v.sale_id,tenant,v.sale_id)
