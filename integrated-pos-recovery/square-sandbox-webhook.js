@@ -38,6 +38,7 @@ export async function handleSquareSandboxWebhook(request,env){
   }
  }
  if(!matchedAttempt){
-  await env.DB.prepare("UPDATE payment_webhook_events SET outcome='unmatched',processed_at=? WHERE provider='square' AND event_id=? AND outcome='received'").bind(now,event.event_id).run();}
+  await env.DB.prepare("UPDATE payment_webhook_events SET outcome='unmatched',processed_at=? WHERE provider='square' AND event_id=? AND outcome='received'").bind(now,event.event_id).run();
+ }
  return response({received:true});
 }
