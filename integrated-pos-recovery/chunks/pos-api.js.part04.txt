@@ -1,0 +1,15 @@
+eason,provider_refund_id,idempotency_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM pos_refunds WHERE provider_refund_id=?) AND EXISTS(SELECT 1 FROM pos_sales WHERE tenant_id=? AND id=? AND status IN ('completed','partially_refunded') AND total_cents-refunded_cents>=?)").bind(crypto.randomUUID(),tenant,v.sale_id,v.amount_cents,"Verified Square Sandbox refund",v.refund_id,refundKey,stamp,v.refund_id,tenant,v.sale_id,v.amount_cents),
+    db.prepare("UPDATE pos_sales SET refunded_cents=COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0),status=CASE WHEN COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0)=total_cents THEN 'refunded' WHEN COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0)>0 THEN 'partially_refunded' ELSE status END WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id,tenant,v.sale_id,tenant,v.sale_id,tenant,v.sale_id)
+   ]);
+   const recorded=await db.prepare("SELECT sale_id,amount_cents FROM pos_refunds WHERE provider_refund_id=?").bind(v.refund_id).first();
+   if(!recorded||recorded.sale_id!==v.sale_id||recorded.amount_cents!==v.amount_cents)return json({error:"Refund ledger was not recorded; investigate before retry"},409);
+   const updated=await db.prepare("SELECT status,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+   return json({verified:true,recorded:true,refund_id:v.refund_id,sale_id:v.sale_id,amount_cents:v.amount_cents,status:updated.status,refunded_cents:updated.refunded_cents});
+  }
+  if(path==="/api/pos/export"&&method==="GET"){
+   // Owner-only business record export. The browser encrypts it with a separate
+   // user-chosen passphrase. No passwords, sessions, tokens, or card data included.
+   if(user.role!=="owner")return json({error:"Owner required for POS export"},403);
+   const defs=[
+    ["pos_products","id,sku,name,price_cents,stock_quantity,active,created_at,updated_at"],
+    ["pos_sales","id,customer_id,status,subtotal_cents,tax_cents,total_cents,refunded_ce
