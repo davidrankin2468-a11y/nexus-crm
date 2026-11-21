@@ -74,6 +74,11 @@ export async function onRequest({request,env}){
    if(!existing)return json({error:"Sale not found for this company"},404);
    if(existing.status==="voided")return json({id:v.sale_id,status:"voided",duplicate:true,payment_charged:false,refund_processed:false});
    if(existing.status!=="pending")return json({error:"Only pending/unpaid sales can be voided"},409);
+   // Never cancel an unpaid checkout while a Square attempt may still charge.
+   // Even "prepared" attempts require explicit payment-status resolution first.
+   const paymentAttempt=await db.prepare("SELECT status FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=?").bind(tenant,v.sale_id).first();
+   if(paymentAttempt&&paymentAttempt.status!=="failed")
+    return json({error:"Square payment attempt exists; resolve its status before voiding this sale"},409);
    // D1 trigger 013 atomically restores inventory exactly once on pending -> voided.
    const result=await db.prepare("UPDATE pos_sales SET status='voided' WHERE tenant_id=? AND id=? AND status='pending'").bind(tenant,v.sale_id).run();
    const changed=Number(result?.meta?.changes??result?.changes??0);
