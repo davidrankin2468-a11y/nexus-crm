@@ -1,8 +1,9 @@
 name: Nexus CRM POS security regression
 on:
   push:
-    branches: [feature/nexus-pos-crm-foundation]
+    branches: [main, feature/nexus-pos-crm-foundation]
   pull_request:
+    branches: [main, feature/nexus-pos-crm-foundation]
   workflow_dispatch:
 permissions:
   contents: read
