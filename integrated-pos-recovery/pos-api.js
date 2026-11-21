@@ -38,22 +38,22 @@ export async function onRequest({request,env}){
    if(user.role!=="owner")return json({error:"Owner access required"},403);
    if(env.SQUARE_ENVIRONMENT!=="sandbox"||!env.SQUARE_SANDBOX_ACCESS_TOKEN||!env.SQUARE_SANDBOX_LOCATION_ID)return json({error:"Sandbox not configured"},503);
    const v=await bodyOf(request);
-   if(!/^[a-f0-9-]{36}$/i.test(v.sale_id||"")||v.confirm!=="RUN ONE DOLLAR SANDBOX REFUND")return json({error:"Explicit sandbox confirmation required"},400);
+   if(!/^[a-f0-9-]{36}$/i.test(v.sale_id||"")||v.confirm!=="RUN PARTIAL SANDBOX REFUND"||!Number.isSafeInteger(v.amount_cents)||v.amount_cents<1)return json({error:"Explicit sandbox confirmation required"},400);
    const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
-   if(!sale||sale.total_cents!==100||sale.refunded_cents!==0||sale.status!=="completed")return json({error:"Only a completed, unrefunded $1.00 sandbox sale is eligible"},409);
+   if(!sale||v.amount_cents>=sale.total_cents||v.amount_cents>sale.total_cents-sale.refunded_cents||!["completed","partially_refunded"].includes(sale.status))return json({error:"Only a completed sandbox sale with sufficient balance is eligible for a partial refund"},409);
    const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
    if(!payment)return json({error:"Reconciled sandbox payment not found"},409);
-   const key="nexus_sandbox_refund_"+v.sale_id.replace(/-/g,"");
+   const key="nxrf_"+v.sale_id.replace(/-/g,"").slice(0,24)+"_"+v.amount_cents;
    let response;
-   try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:100,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS one dollar sandbox refund test"})});}
+   try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:v.amount_cents,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS partial sandbox refund test"})});}
    catch{return json({error:"Square Sandbox refund request timed out. Retry the SAME sale; idempotency prevents duplicate refunds."},503);}
    if(response.status>=300&&response.status<400)return json({error:"Square redirect blocked"},502);
    const data=await response.json().catch(()=>null);
    if(!response.ok)return json({error:"Square Sandbox refund request rejected",providerStatus:response.status,providerErrors:(data?.errors||[]).map(x=>x.code).slice(0,3)},409);
    const refund=data?.refund;
-   if(!refund?.id||refund.payment_id!==payment.provider_payment_id||refund.amount_money?.amount!==100||refund.amount_money?.currency!=="USD")return json({error:"Square refund response mismatch; investigate before retry"},502);
+   if(!refund?.id||refund.payment_id!==payment.provider_payment_id||refund.amount_money?.amount!==v.amount_cents||refund.amount_money?.currency!=="USD")return json({error:"Square refund response mismatch; investigate before retry"},502);
    if(refund.status!=="COMPLETED")return json({created:true,recorded:false,refund_id:refund.id,status:refund.status,message:"Square refund not yet completed; retry the same test later to verify."},202);
-   const verifyRequest=new Request(new URL("/api/pos/square/sandbox-refund-verify",request.url),{method:"POST",headers:request.headers,body:JSON.stringify({refund_id:refund.id,sale_id:v.sale_id,amount_cents:100})});
+   const verifyRequest=new Request(new URL("/api/pos/square/sandbox-refund-verify",request.url),{method:"POST",headers:request.headers,body:JSON.stringify({refund_id:refund.id,sale_id:v.sale_id,amount_cents:v.amount_cents})});
    return onRequest({request:verifyRequest,env});
   }
   if(path==="/api/pos/square/sandbox-refund-verify"&&method==="POST"){
