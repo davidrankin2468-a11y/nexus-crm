@@ -43,7 +43,8 @@ export async function onRequest({request,env}){
    if(!sale||v.amount_cents>=sale.total_cents||v.amount_cents>sale.total_cents-sale.refunded_cents||!["completed","partially_refunded"].includes(sale.status))return json({error:"Only a completed sandbox sale with sufficient balance is eligible for a partial refund"},409);
    const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
    if(!payment)return json({error:"Reconciled sandbox payment not found"},409);
-   const key="nxrf_"+v.sale_id.replace(/-/g,"").slice(0,24)+"_"+v.amount_cents;
+   if(!/^[a-f0-9-]{36}$/i.test(v.operation_id||""))return json({error:"Stable refund operation ID required; retry with the same ID"},400);
+   const key="nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase();
    let response;
    try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:v.amount_cents,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS partial sandbox refund test"})});}
    catch{return json({error:"Square Sandbox refund request timed out. Retry the SAME sale; idempotency prevents duplicate refunds."},503);}
