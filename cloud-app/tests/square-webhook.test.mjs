@@ -50,7 +50,7 @@ test("missing signature is rejected",async()=>{
 });
 test("malformed signed JSON is rejected",async()=>{
   const {rows,env}=setup();
-  assert.equal((await handleSquareSandboxWebhook(request("{bad-json")) .status,400);
+  assert.equal((await handleSquareSandboxWebhook(request("{bad-json"),env)).status,400);
   assert.equal(rows.size,0);
 });
 test("invalid event id is rejected",async()=>{
