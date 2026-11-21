@@ -1,0 +1,18 @@
+GET",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16",Accept:"application/json"}});
+    if(response.status>=300&&response.status<400)return json({connected:false,reason:"SQUARE_REDIRECT_BLOCKED",providerStatus:response.status,paymentProcessing:false},502);
+    if(!response.ok)return json({connected:false,reason:"SQUARE_PROVIDER_REJECTED",providerStatus:response.status,paymentProcessing:false},502);
+    const data=await response.json().catch(()=>null);
+    const location=Array.isArray(data?.locations)?data.locations.find(x=>x?.id===env.SQUARE_SANDBOX_LOCATION_ID):null;
+    if(!location)return json({connected:false,reason:"SANDBOX_LOCATION_NOT_FOUND",paymentProcessing:false},409);
+    if(location.merchant_id&&location.merchant_id!==env.SQUARE_SANDBOX_MERCHANT_ID)return json({connected:false,reason:"SANDBOX_MERCHANT_MISMATCH",paymentProcessing:false},409);
+    return json({connected:true,environment:"sandbox",locationVerified:true,merchantVerified:Boolean(location.merchant_id),paymentProcessing:false});
+   }catch{return json({connected:false,reason:"SQUARE_PROVIDER_UNAVAILABLE",paymentProcessing:false},503)}
+  }
+
+  if((path==="/api/pos/square/sandbox-prepare"&&method==="POST")||(path==="/api/pos/square/sandbox-reconcile"&&method==="POST")||(path==="/api/pos/square/sandbox-submit"&&method==="POST")||(path==="/api/pos/square/sandbox-attempts"&&method==="GET"))return handleSquareSandboxAttempt({path,method,db,env,tenant,body:method==="POST"?await bodyOf(request):{}});
+  if(path==="/api/pos/square/sandbox-refund-test"&&method==="POST"){
+   if(user.role!=="owner")return json({error:"Owner access required"},403);
+   if(env.SQUARE_ENVIRONMENT!=="sandbox"||!env.SQUARE_SANDBOX_ACCESS_TOKEN||!env.SQUARE_SANDBOX_LOCATION_ID)return json({error:"Sandbox not configured"},503);
+   const v=await bodyOf(request);
+   if(!/^[a-f0-9-]{36}$/i.test(v.sale_id||"")||v.confirm!=="RUN ONE DOLLAR SANDBOX REFUND")return json({error:"Explicit sandbox confirmation required"},400);
+   const sale=await
