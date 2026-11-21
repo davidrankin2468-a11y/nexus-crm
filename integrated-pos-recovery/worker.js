@@ -36,7 +36,14 @@ export default {
      ["no_duplicate_provider_refunds","SELECT provider_refund_id FROM pos_refunds WHERE provider_refund_id IS NOT NULL GROUP BY provider_refund_id HAVING COUNT(*)>1",r=>r.length===0],
      ["no_refund_ledger_mismatch","SELECT s.id FROM pos_sales s LEFT JOIN pos_refunds r ON r.tenant_id=s.tenant_id AND r.sale_id=s.id GROUP BY s.id HAVING s.refunded_cents!=COALESCE(SUM(r.amount_cents),0)",r=>r.length===0],
      ["no_over_refund","SELECT id FROM pos_sales WHERE refunded_cents>total_cents",r=>r.length===0],
-     ["no_bad_refund_status","SELECT id FROM pos_sales WHERE (status='refunded' AND refunded_cents!=total_cents) OR (status='partially_refunded' AND (refunded_cents<=0 OR refunded_cents>=total_cents))",r=>r.length===0]
+     ["no_bad_refund_status","SELECT id FROM pos_sales WHERE (status='refunded' AND refunded_cents!=total_cents) OR (status='partially_refunded' AND (refunded_cents<=0 OR refunded_cents>=total_cents))",r=>r.length===0],
+     ["no_orphan_customers","SELECT c.id FROM customers c LEFT JOIN tenants t ON t.id=c.tenant_id WHERE t.id IS NULL",r=>r.length===0],
+     ["no_orphan_users","SELECT u.id FROM users u LEFT JOIN tenants t ON t.id=u.tenant_id WHERE t.id IS NULL",r=>r.length===0],
+     ["no_invalid_inventory","SELECT id FROM pos_products WHERE stock_quantity<0 OR price_cents<0",r=>r.length===0],
+     ["no_duplicate_tenant_skus","SELECT tenant_id,sku FROM pos_products GROUP BY tenant_id,sku HAVING COUNT(*)>1",r=>r.length===0],
+     ["no_invalid_company_invitations","SELECT id FROM company_invitations WHERE expires_at<=created_at OR (redeemed_at IS NOT NULL AND revoked_at IS NOT NULL)",r=>r.length===0],
+     ["no_invalid_staff_invitations","SELECT id FROM staff_invitations WHERE expires_at<=created_at OR (redeemed_at IS NOT NULL AND revoked_at IS NOT NULL)",r=>r.length===0],
+     ["no_duplicate_license_features","SELECT plan_code,feature_key FROM license_entitlements GROUP BY plan_code,feature_key HAVING COUNT(*)>1",r=>r.length===0]
     ];
     for(const [name,sql,check] of queries){try{const r=await env.DB.prepare(sql).all();assert(name,check(r.results||[]));}catch{assert(name,false)}}
    }catch{assert("database_available",false)}
