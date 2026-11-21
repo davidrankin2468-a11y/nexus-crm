@@ -269,7 +269,7 @@ async function verifyOtp(secretBytes,code,lastUsedStep=-1){
 }
 const MFA_CHALLENGE_SECONDS=300;
 
-function permitted(role,method,path){
+export function permitted(role,method,path){
  const ownSecurity=(path==="/api/security/change-password"&&method==="POST")||
   (path==="/api/security/recovery-codes"&&method==="POST")||
   (path==="/api/security/recovery-count"&&method==="GET")||
