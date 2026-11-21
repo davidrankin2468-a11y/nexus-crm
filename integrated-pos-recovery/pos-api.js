@@ -34,6 +34,22 @@ export async function onRequest({request,env}){
   }
 
   if((path==="/api/pos/square/sandbox-prepare"&&method==="POST")||(path==="/api/pos/square/sandbox-reconcile"&&method==="POST")||(path==="/api/pos/square/sandbox-submit"&&method==="POST")||(path==="/api/pos/square/sandbox-attempts"&&method==="GET"))return handleSquareSandboxAttempt({path,method,db,env,tenant,body:method==="POST"?await bodyOf(request):{}});
+  if(path==="/api/pos/square/sandbox-refund-retry-check"&&method==="POST"){
+   if(user.role!=="owner")return json({error:"Owner access required"},403);
+   if(env.SQUARE_ENVIRONMENT!=="sandbox")return json({error:"Sandbox only"},403);
+   const v=await bodyOf(request);
+   if(!/^[a-f0-9-]{36}$/i.test(v.sale_id||""))return json({error:"Valid sale ID required"},400);
+   const refund=await db.prepare("SELECT provider_refund_id,amount_cents,idempotency_key FROM pos_refunds WHERE tenant_id=? AND sale_id=? AND idempotency_key LIKE 'nxrf_%' ORDER BY created_at DESC LIMIT 1").bind(tenant,v.sale_id).first();
+   if(!refund)return json({error:"No previously verified sandbox test refund for this sale"},404);
+   const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
+   if(!payment)return json({error:"Reconciled sandbox payment not found"},409);
+   const verification=await verifySandboxRefund({refundId:refund.provider_refund_id,paymentId:payment.provider_payment_id,amountCents:refund.amount_cents,env});
+   if(!verification.verified)return json({verified:false,recorded:true,reason:verification.reason},409);
+   const row=await db.prepare("SELECT COUNT(*) AS refund_count,COALESCE(SUM(amount_cents),0) AS refund_sum FROM pos_refunds WHERE tenant_id=? AND sale_id=? AND provider_refund_id=?").bind(tenant,v.sale_id,refund.provider_refund_id).first();
+   const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
+   const pass=Number(row.refund_count)===1&&Number(sale.refunded_cents)>=Number(refund.amount_cents)&&Number(sale.refunded_cents)<=Number(sale.total_cents);
+   return json({verified:true,recorded:true,duplicate:false,read_only:true,pass,refund_count:Number(row.refund_count),amount_cents:refund.amount_cents,sale_status:sale.status,remaining_cents:sale.total_cents-sale.refunded_cents});
+  }
   if(path==="/api/pos/square/sandbox-refund-test"&&method==="POST"){
    if(user.role!=="owner")return json({error:"Owner access required"},403);
    if(env.SQUARE_ENVIRONMENT!=="sandbox"||!env.SQUARE_SANDBOX_ACCESS_TOKEN||!env.SQUARE_SANDBOX_LOCATION_ID)return json({error:"Sandbox not configured"},503);
