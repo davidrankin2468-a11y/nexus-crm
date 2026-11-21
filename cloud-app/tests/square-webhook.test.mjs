@@ -8,6 +8,7 @@ const KEY = "test-only-signing-secret";
 function setup() {
   const rows = new Map();
   const db = { prepare(sql) {
+    if (sql.includes("SELECT id,tenant_id FROM pos_square_sandbox_payment_attempts")) return { bind() { return { async first() { return null; } }; } };
     assert.match(sql, /INSERT OR IGNORE INTO payment_webhook_events/);
     return { bind(provider,id,receivedAt) {
       assert.equal(provider,"square");
