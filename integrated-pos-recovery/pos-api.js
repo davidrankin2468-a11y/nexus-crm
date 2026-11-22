@@ -67,7 +67,7 @@ export async function onRequest({request,env}){
    // Atomically reserve this operation BEFORE contacting Square. A second request
    // must not issue another provider POST, including after an unknown outcome.
    // Requires migration: pos_square_sandbox_refund_operations.
-   const claim=await db.prepare("INSERT INTO pos_square_sandbox_refund_operations(operation_key,tenant_id,sale_id,amount_cents,payment_id,status,created_at) VALUES(?,?,?,?,?,'pending',?) ON CONFLICT(operation_key) DO NOTHING").bind(key,tenant,v.sale_id,v.amount_cents,payment.provider_payment_id,now()).run();
+   const claim=await db.prepare("INSERT INTO pos_square_sandbox_refund_operations(operation_key,tenant_id,sale_id,amount_cents,payment_id,status,created_at) VALUES(?,?,?,?,?,'pending',?) ON CONFLICT DO NOTHING").bind(key,tenant,v.sale_id,v.amount_cents,payment.provider_payment_id,now()).run();
    if(Number(claim?.meta?.changes??claim?.changes??0)!==1){
     const previous=await db.prepare("SELECT tenant_id,sale_id,amount_cents,payment_id,status FROM pos_square_sandbox_refund_operations WHERE operation_key=?").bind(key).first();
     if(!previous||previous.tenant_id!==tenant||previous.sale_id!==v.sale_id||previous.amount_cents!==v.amount_cents||previous.payment_id!==payment.provider_payment_id)return json({error:"Refund operation ID already reserved for a different refund"},409);
@@ -107,6 +107,8 @@ export async function onRequest({request,env}){
    ]);
    const recorded=await db.prepare("SELECT sale_id,amount_cents FROM pos_refunds WHERE provider_refund_id=?").bind(v.refund_id).first();
    if(!recorded||recorded.sale_id!==v.sale_id||recorded.amount_cents!==v.amount_cents)return json({error:"Refund ledger was not recorded; investigate before retry"},409);
+   // Unknown provider outcomes stay locked; release only after verified ledger recording.
+   await db.prepare("UPDATE pos_square_sandbox_refund_operations SET status='verified' WHERE operation_key=? AND tenant_id=? AND sale_id=? AND amount_cents=? AND status='pending'").bind(refundKey,tenant,v.sale_id,v.amount_cents).run();
    const updated=await db.prepare("SELECT status,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
    return json({verified:true,recorded:true,refund_id:v.refund_id,sale_id:v.sale_id,amount_cents:v.amount_cents,status:updated.status,refunded_cents:updated.refunded_cents});
   }
