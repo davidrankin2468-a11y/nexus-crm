@@ -8,6 +8,9 @@ on:
       - 'integrated-pos-recovery/tests/**'
       - 'integrated-pos-recovery/square-d1-reconciliation.js'
       - 'integrated-pos-recovery/pos-api.js'
+      - 'integrated-pos-recovery/square-sandbox-refund-verification.js'
+      - 'integrated-pos-recovery/square-sandbox-webhook.js'
+      - 'integrated-pos-recovery/worker.js'
   workflow_dispatch:
 jobs:
   safe-get-checks:
@@ -25,7 +28,7 @@ jobs:
           failures=0
           for path in /preview-info /regression-status /api/square/sandbox-readiness; do
             echo "::group::GET $path"
-            code=$(curl --silent --show-error --location --max-time 20 --output response.json --write-out '%{http_code}' "$base$path") || code="000"
+            code=$(curl --silent --show-error --max-redirs 0 --max-time 20 --output response.json --write-out '%{http_code}' "$base$path") || code="000"
             echo "HTTP $code"
             head -c 1200 response.json 2>/dev/null || true
             echo
