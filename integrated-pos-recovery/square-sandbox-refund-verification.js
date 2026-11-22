@@ -4,7 +4,7 @@ export function inspectSandboxRefund(refund,{paymentId,amountCents,locationId}){
  if(!refund||!ID.test(refund.id||''))return 'REFUND_ID_INVALID';
  if(refund.payment_id!==paymentId)return 'PAYMENT_MISMATCH';
  if(refund.status!=='COMPLETED')return 'REFUND_NOT_COMPLETED';
- if(refund.amount_money?.currency!=='USD'||refund.amount_money.amount!==amountCents)return 'AMOUNT_MISMATCH';
+ if(refund.amount_money?.currency!=='USD'||refund.amount_money?.amount!==amountCents)return 'AMOUNT_MISMATCH';
  if(refund.location_id&&refund.location_id!==locationId)return 'LOCATION_MISMATCH';
  return null;
 }
