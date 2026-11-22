@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const src=readFileSync(new URL('../pos-api.js',import.meta.url),'utf8');
+const verify=src.slice(src.indexOf('if(path==="/api/pos/square/sandbox-refund-verify"'),src.indexOf('if(path==="/api/pos/export"'));
+const create=src.slice(src.indexOf('if(path==="/api/pos/square/sandbox-refund-test"'),src.indexOf('if(path==="/api/pos/square/sandbox-refund-verify"'));
+test('refund verification is owner-only',()=>assert.match(verify,/if\(user\.role!=="owner"\)/));
+test('refund verification is sandbox-only',()=>assert.match(verify,/if\(env\.SQUARE_ENVIRONMENT!=="sandbox"\)/));
+test('verification requires stable operation ID',()=>assert.match(verify,/if\(!\/\^\[a-f0-9-\]\{36\}\$\/i\.test\(v\.operation_id\|\|""\)\)/));
+test('no legacy verification key fallback',()=>assert.doesNotMatch(verify,/square_refund_/));
+test('same operation checked before provider refund',()=>assert.ok(create.indexOf('const prior=await db.prepare')<create.indexOf('fetch("https://connect.squareupsandbox.com/v2/refunds"')));
+test('same operation is Square idempotency key',()=>assert.match(create,/idempotency_key:key/));
+test('unknown outcome keeps operation ID',()=>assert.match(create,/retrySameOperation:true,recorded:false/));
+test('ledger insert conditional on provider refund uniqueness',()=>assert.match(verify,/WHERE NOT EXISTS\(SELECT 1 FROM pos_refunds WHERE provider_refund_id=\?\)/));
+test('provider refund verified before ledger insert',()=>assert.ok(verify.indexOf('await verifySandboxRefund')<verify.indexOf('await db.batch')));
