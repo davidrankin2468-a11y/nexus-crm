@@ -51,3 +51,9 @@ test('payment idempotency: claim precedes fake payment submission',()=>{
  assert.match(handler,/a\.status!=="prepared"/);
  assert.match(handler,/reconciliation_required:a\.status==="unknown"/);
 });
+
+test('unknown sandbox payment outcome explicitly forbids replay',()=>{
+ const handler=reconciliationSource.slice(reconciliationSource.indexOf('if(path==="/api/pos/square/sandbox-submit"'),reconciliationSource.indexOf('if(path==="/api/pos/square/sandbox-reconcile"'));
+ assert.match(handler,/SANDBOX_SUBMISSION_OUTCOME_UNKNOWN[\\s\\S]*?retrySameOperation:false,operationPending:true/);
+ assert.match(handler,/SANDBOX_PAYMENT_NEEDS_MANUAL_RECONCILIATION[\\s\\S]*?retrySameOperation:false,operationPending:true/);
+});
