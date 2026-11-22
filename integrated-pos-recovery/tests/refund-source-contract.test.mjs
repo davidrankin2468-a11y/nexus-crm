@@ -10,6 +10,8 @@ test('verification requires stable operation ID',()=>assert.match(verify,/if\(!\
 test('no legacy verification key fallback',()=>assert.doesNotMatch(verify,/square_refund_/));
 test('same operation checked before provider refund',()=>assert.ok(create.indexOf('const prior=await db.prepare')<create.indexOf('fetch("https://connect.squareupsandbox.com/v2/refunds"')));
 test('same operation is Square idempotency key',()=>assert.match(create,/idempotency_key:key/));
-test('unknown outcome keeps operation ID',()=>assert.match(create,/retrySameOperation:true,recorded:false/));
+test('unknown outcome blocks provider replay until reconciliation',()=>assert.match(create,/retrySameOperation:false,operationPending:true,recorded:false/));
 test('ledger insert conditional on provider refund uniqueness',()=>assert.match(verify,/WHERE NOT EXISTS\(SELECT 1 FROM pos_refunds WHERE provider_refund_id=\?\)/));
 test('provider refund verified before ledger insert',()=>assert.ok(verify.indexOf('await verifySandboxRefund')<verify.indexOf('await db.batch')));
+test('atomic operation claim precedes provider POST',()=>assert.ok(create.indexOf('INSERT INTO pos_square_sandbox_refund_operations')>=0&&create.indexOf('INSERT INTO pos_square_sandbox_refund_operations')<create.indexOf('fetch("https://connect.squareupsandbox.com/v2/refunds"')));
+test('duplicate claim blocks provider replay',()=>assert.match(create,/if\(Number\(claim\?\.meta\?\.changes/));
