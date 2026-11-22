@@ -5,6 +5,9 @@ on:
     branches: [recover-integrated-pos-worker-2026-11-21]
     paths:
       - '.github/workflows/nexus-preview-smoke.yml'
+      - 'integrated-pos-recovery/tests/**'
+      - 'integrated-pos-recovery/square-d1-reconciliation.js'
+      - 'integrated-pos-recovery/pos-api.js'
   workflow_dispatch:
 jobs:
   safe-get-checks:
@@ -13,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Refund source contract tests
-        run: node --test integrated-pos-recovery/tests/refund-source-contract.test.mjs
+        run: node --test integrated-pos-recovery/tests/*.test.mjs
       - name: Three read-only endpoint checks
         shell: bash
         run: |
