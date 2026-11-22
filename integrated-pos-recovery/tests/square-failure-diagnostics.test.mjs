@@ -11,3 +11,12 @@ test('diagnostic records retain only approved fields and codes', () => {
 test('unknown reason and invalid fields fail closed',()=>{
  assert.deepEqual(sanitizeSandboxFailure({reason:'token=secret',providerStatus:200,operation:'delete',at:'invalid'}),{operation:'unknown',reason:'UNKNOWN_FAILURE',providerStatus:null,at:null});
 });
+
+test('known Square payment failures retain actionable sanitized reason',()=>{
+ for(const reason of ['SQUARE_PAYMENT_REJECTED','SQUARE_LOCATIONS_REJECTED','PAYMENT_ID_NOT_RETURNED','PAYMENT_NOT_COMPLETED','MERCHANT_LOCATION_NOT_VERIFIED','SALE_REFERENCE_MISMATCH','INVALID_ATTEMPT']){
+  const value=sanitizeSandboxFailure({reason,providerStatus:503,operation:'payment_reconcile',rawBody:'private'});
+  assert.equal(value.reason,reason);
+  assert.equal(value.providerStatus,503);
+  assert.equal('rawBody' in value,false);
+ }
+});
