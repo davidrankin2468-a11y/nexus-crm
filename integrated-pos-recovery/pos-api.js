@@ -77,9 +77,11 @@ export async function onRequest({request,env}){
    return onRequest({request:verifyRequest,env});
   }
   if(path==="/api/pos/square/sandbox-refund-verify"&&method==="POST"){
+   if(user.role!=="owner")return json({error:"Owner access required"},403);
+   if(env.SQUARE_ENVIRONMENT!=="sandbox")return json({error:"Sandbox only"},403);
    const v=await bodyOf(request);
    if(!/^[A-Za-z0-9_-]{8,200}$/.test(v.refund_id||"")||!/^[a-f0-9-]{36}$/i.test(v.sale_id||"")||!Number.isSafeInteger(v.amount_cents)||v.amount_cents<1)return json({error:"Invalid refund, sale, or amount"},400);
-   if(v.operation_id&&!/^[a-f0-9-]{36}$/i.test(v.operation_id))return json({error:"Invalid refund operation ID"},400);
+   if(!/^[a-f0-9-]{36}$/i.test(v.operation_id||""))return json({error:"Stable refund operation ID required"},400);
    const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
    if(!sale||!["completed","partially_refunded","refunded"].includes(sale.status))return json({error:"Paid sale not found"},404);
    const existing=await db.prepare("SELECT tenant_id,sale_id,amount_cents FROM pos_refunds WHERE provider_refund_id=?").bind(v.refund_id).first();
@@ -89,7 +91,7 @@ export async function onRequest({request,env}){
    if(!payment)return json({error:"Verified Square payment not found"},409);
    const result=await verifySandboxRefund({refundId:v.refund_id,paymentId:payment.provider_payment_id,amountCents:v.amount_cents,env});
    if(!result.verified)return json({verified:false,reason:result.reason},409);
-   const stamp=now(),refundKey=v.operation_id?"nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase():"square_refund_"+v.refund_id;
+   const stamp=now(),refundKey="nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase();
    await db.batch([
     db.prepare("INSERT INTO pos_refunds(id,tenant_id,sale_id,amount_cents,reason,provider_refund_id,idempotency_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM pos_refunds WHERE provider_refund_id=?) AND EXISTS(SELECT 1 FROM pos_sales WHERE tenant_id=? AND id=? AND status IN ('completed','partially_refunded') AND total_cents-refunded_cents>=?)").bind(crypto.randomUUID(),tenant,v.sale_id,v.amount_cents,"Verified Square Sandbox refund",v.refund_id,refundKey,stamp,v.refund_id,tenant,v.sale_id,v.amount_cents),
     db.prepare("UPDATE pos_sales SET refunded_cents=COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0),status=CASE WHEN COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0)=total_cents THEN 'refunded' WHEN COALESCE((SELECT SUM(amount_cents) FROM pos_refunds WHERE tenant_id=? AND sale_id=?),0)>0 THEN 'partially_refunded' ELSE status END WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id,tenant,v.sale_id,tenant,v.sale_id,tenant,v.sale_id)
