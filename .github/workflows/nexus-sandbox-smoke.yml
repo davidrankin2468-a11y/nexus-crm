@@ -2,13 +2,19 @@ name: Nexus CRM POS sandbox smoke checks
 on:
   push:
     branches: [recover-integrated-pos-worker-2026-11-21]
-    paths: ['.github/workflows/nexus-sandbox-smoke.yml']
+    paths: ['.github/workflows/nexus-sandbox-smoke.yml', 'integrated-pos-recovery/**']
   workflow_dispatch:
 jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Signed webhook duplicate delivery test
+        run: node integrated-pos-recovery/webhook-idempotency.test.mjs
       - name: Verify deployed regression and sandbox readiness (read-only)
         shell: bash
         env:
