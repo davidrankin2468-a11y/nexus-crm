@@ -1,0 +1,29 @@
+name: Nexus CRM POS dedicated preview GET smoke
+on:
+  push:
+    branches: [recover-integrated-pos-worker-2026-11-21]
+    paths:
+      - '.github/workflows/nexus-preview-smoke.yml'
+  workflow_dispatch:
+jobs:
+  safe-get-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Three read-only endpoint checks
+        shell: bash
+        run: |
+          set -uo pipefail
+          base="https://runtime-v79-validation-nexus-crm-pos-integrated-preview.davidrankin2468.workers.dev"
+          failures=0
+          for path in /preview-info /regression-status /api/square/sandbox-readiness; do
+            echo "::group::GET $path"
+            code=$(curl --silent --show-error --location --max-time 20 --output response.json --write-out '%{http_code}' "$base$path") || code="000"
+            echo "HTTP $code"
+            head -c 1200 response.json 2>/dev/null || true
+            echo
+            if [[ "$code" != "200" ]]; then failures=$((failures+1)); fi
+            echo "::endgroup::"
+          done
+          echo "Failed endpoint checks: $failures"
+          test "$failures" -eq 0
