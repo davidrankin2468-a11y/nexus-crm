@@ -107,7 +107,7 @@ export async function handleSquareSandboxAttempt({path,method,db,env,tenant,body
    await db.prepare("UPDATE pos_square_sandbox_payment_attempts SET status='unknown',updated_at=? WHERE id=? AND tenant_id=? AND status='submitted'").bind(t(),a.id,tenant).run().catch(()=>null);
    return json({error:"SANDBOX_SUBMISSION_OUTCOME_UNKNOWN",reason:result.reason,
     payment_id:result.paymentId||undefined,providerStatus:result.providerStatus||undefined,
-    reconciliation_required:true,receipt_paid:false,liveChargesEnabled:false},409);
+    reconciliation_required:true,retrySameOperation:false,operationPending:true,receipt_paid:false,liveChargesEnabled:false},409);
   }
   try{
    const saved=await db.prepare("UPDATE pos_square_sandbox_payment_attempts SET status='completed_unreconciled',provider_payment_id=?,updated_at=? WHERE id=? AND tenant_id=? AND sale_id=? AND status='submitted' AND provider_payment_id IS NULL").bind(result.paymentId,t(),a.id,tenant,a.sale_id).run();
@@ -115,7 +115,7 @@ export async function handleSquareSandboxAttempt({path,method,db,env,tenant,body
   }catch{
    await db.prepare("UPDATE pos_square_sandbox_payment_attempts SET status='unknown',updated_at=? WHERE id=? AND tenant_id=? AND status='submitted'").bind(t(),a.id,tenant).run().catch(()=>null);
    return json({error:"SANDBOX_PAYMENT_NEEDS_MANUAL_RECONCILIATION",payment_id:result.paymentId,
-    reconciliation_required:true,receipt_paid:false,liveChargesEnabled:false},503);
+    reconciliation_required:true,retrySameOperation:false,operationPending:true,receipt_paid:false,liveChargesEnabled:false},503);
   }
   return json({submitted:true,environment:"sandbox",provider_completed:true,
    attempt_id:a.id,sale_id:a.sale_id,payment_id:result.paymentId,
