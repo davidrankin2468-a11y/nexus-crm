@@ -10,7 +10,7 @@ export function inspectSandboxRefund(refund,{paymentId,amountCents,locationId}){
 }
 export async function verifySandboxRefund({refundId,paymentId,amountCents,env,fetchImpl=fetch}){
  if(env?.SQUARE_ENVIRONMENT!=='sandbox'||!env.SQUARE_SANDBOX_ACCESS_TOKEN||!env.SQUARE_SANDBOX_LOCATION_ID)return {verified:false,reason:'SANDBOX_NOT_CONFIGURED'};
- if(!ID.test(refundId||'')||!ID.test(paymentId||'')||!Number.isSafeInteger(amountCents)||amountCents<1)return {verified:false,reason:'INVALID_REFUND'};
+ if(!ID.test(refundId||'')||!ID.test(paymentId||'')||!Number.isSafeInteger(amountCents)||amountCents<1||amountCents>100000000)return {verified:false,reason:'INVALID_REFUND'};
  try{
   const response=await fetchImpl('https://connect.squareupsandbox.com/v2/refunds/'+encodeURIComponent(refundId),{
    method:'GET',redirect:'manual',signal:AbortSignal.timeout(12000),
