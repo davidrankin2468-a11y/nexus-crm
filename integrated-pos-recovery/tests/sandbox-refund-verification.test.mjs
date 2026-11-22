@@ -32,3 +32,10 @@ test('invalid input never calls Square',async()=>{
 test('production environment cannot verify sandbox refunds',async()=>{
  let calls=0;const result=await verifySandboxRefund({...args,env:{...env,SQUARE_ENVIRONMENT:'production'},fetchImpl:async()=>{calls++;return response(200,{refund:good})}});assert.equal(calls,0);assert.equal(result.reason,'SANDBOX_NOT_CONFIGURED');
 });
+
+test('missing amount_money fails closed with an amount mismatch, not a provider outage',async()=>{
+ const malformed={...good,amount_money:null};
+ const result=await verifySandboxRefund({...args,fetchImpl:async()=>response(200,{refund:malformed})});
+ assert.deepEqual(result,{verified:false,reason:'AMOUNT_MISMATCH'});
+ assert.equal(inspectSandboxRefund(malformed,{paymentId:good.payment_id,amountCents:50,locationId:good.location_id}),'AMOUNT_MISMATCH');
+});
