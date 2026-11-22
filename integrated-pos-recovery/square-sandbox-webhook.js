@@ -23,7 +23,10 @@ export async function handleSquareSandboxWebhook(request,env){
  if(typeof event?.event_id!=="string"||event.event_id.length>200||!/^[A-Za-z0-9_-]+$/.test(event.event_id)||typeof event.type!=="string")return response({error:"Invalid event"},400);
  // Record authenticated event for reconciliation. Never trust payload as proof of payment/refund.
  const now=Math.floor(Date.now()/1000);
- await env.DB.prepare("INSERT OR IGNORE INTO payment_webhook_events(provider,event_id,received_at,outcome) VALUES(?,?,?,'received')").bind("square",event.event_id,now).run();
+ const insertion=await env.DB.prepare("INSERT OR IGNORE INTO payment_webhook_events(provider,event_id,received_at,outcome) VALUES(?,?,?,'received')").bind("square",event.event_id,now).run();
+ // A duplicate delivery must not re-run reconciliation or mutate the ledger.
+ // Fail closed if D1 does not report the insert result.
+ if(insertion?.meta?.changes!==1)return response({received:true,duplicate:true});
  let matchedAttempt=false;
  const paymentId=event.data?.object?.payment?.id;
  if(["payment.created","payment.updated"].includes(event.type)&&typeof paymentId==="string"&&/^[A-Za-z0-9_-]{8,200}$/.test(paymentId)){
