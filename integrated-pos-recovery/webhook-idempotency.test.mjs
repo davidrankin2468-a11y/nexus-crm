@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+import {handleSquareSandboxWebhook} from './square-sandbox-webhook.js';
+globalThis.crypto ??= webcrypto;
+const url='https://example.test/api/pos/square/webhook';
+const secret='test-only-webhook-secret';
+const payload=JSON.stringify({event_id:'evt_test_12345678',type:'payment.updated',data:{object:{payment:{id:'pay_test_12345678'}}}});
+const signature=Buffer.from(await crypto.subtle.sign('HMAC',await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']),new TextEncoder().encode(url+payload))).toString('base64');
+let inserted=0,lookups=0;
+const db={prepare(sql){return {bind(...args){return {async run(){if(sql.startsWith('INSERT OR IGNORE')){const changes=inserted++===0?1:0;return {meta:{changes}}}return {meta:{changes:1}}},async first(){lookups++;return null}}}}}};
+const env={SQUARE_ENVIRONMENT:'sandbox',SQUARE_SANDBOX_WEBHOOK_SIGNATURE_KEY:secret,DB:db};
+const send=(sig=signature)=>handleSquareSandboxWebhook(new Request(url,{method:'POST',headers:{'x-square-hmacsha256-signature':sig},body:payload}),env);
+const invalid=await send('invalid');assert.equal(invalid.status,401);assert.equal(inserted,0);
+const first=await send();assert.equal(first.status,200);assert.equal((await first.json()).received,true);assert.equal(lookups,1);
+const duplicate=await send();assert.equal(duplicate.status,200);assert.equal((await duplicate.json()).duplicate,true);assert.equal(lookups,1);
+console.log('PASS: invalid signature denied; first delivery processed; duplicate delivery skips reconciliation');
