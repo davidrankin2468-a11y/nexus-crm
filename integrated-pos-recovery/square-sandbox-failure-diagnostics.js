@@ -4,7 +4,7 @@ export function sanitizeSandboxFailure({reason,providerStatus,operation,at} = {}
   const status = Number.isInteger(providerStatus) && providerStatus >= 400 && providerStatus <= 599 ? providerStatus : null;
   const timestamp = typeof at === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(at) && !Number.isNaN(Date.parse(at)) && new Date(at).toISOString() === at ? at : null;
   return Object.freeze({
-    operation: operation === 'refund_verify' || operation === 'payment_reconcile' || operation === 'refund_submit' ? operation : 'unknown',
+    operation: operation === 'refund_verify' || operation === 'payment_reconcile' || operation === 'payment_submit' || operation === 'refund_submit' ? operation : 'unknown',
     reason: ALLOWED.has(reason) ? reason : 'UNKNOWN_FAILURE',
     providerStatus: status,
     at: timestamp
