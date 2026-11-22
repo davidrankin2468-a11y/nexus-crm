@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+      - name: Refund source contract tests
+        run: node --test integrated-pos-recovery/tests/refund-source-contract.test.mjs
       - name: Three read-only endpoint checks
         shell: bash
         run: |
