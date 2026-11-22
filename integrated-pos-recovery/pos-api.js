@@ -64,9 +64,18 @@ export async function onRequest({request,env}){
    const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
    if(!payment)return json({error:"Reconciled sandbox payment not found"},409);
 
+   // Atomically reserve this operation BEFORE contacting Square. A second request
+   // must not issue another provider POST, including after an unknown outcome.
+   // Requires migration: pos_square_sandbox_refund_operations.
+   const claim=await db.prepare("INSERT INTO pos_square_sandbox_refund_operations(operation_key,tenant_id,sale_id,amount_cents,payment_id,status,created_at) VALUES(?,?,?,?,?,'pending',?) ON CONFLICT(operation_key) DO NOTHING").bind(key,tenant,v.sale_id,v.amount_cents,payment.provider_payment_id,now()).run();
+   if(Number(claim?.meta?.changes??claim?.changes??0)!==1){
+    const previous=await db.prepare("SELECT tenant_id,sale_id,amount_cents,payment_id,status FROM pos_square_sandbox_refund_operations WHERE operation_key=?").bind(key).first();
+    if(!previous||previous.tenant_id!==tenant||previous.sale_id!==v.sale_id||previous.amount_cents!==v.amount_cents||previous.payment_id!==payment.provider_payment_id)return json({error:"Refund operation ID already reserved for a different refund"},409);
+    return json({error:"Refund operation already submitted or outcome unknown; reconcile with Square before retrying",operationPending:true,retrySameOperation:false},409);
+   }
    let response;
    try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:v.amount_cents,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS partial sandbox refund test"})});}
-   catch(error){const timedOut=error?.name==="TimeoutError"||error?.name==="AbortError";return json({error:timedOut?"Square Sandbox refund request timed out; outcome unknown":"Square Sandbox refund transport failed; outcome unknown",failureCode:timedOut?"SQUARE_REFUND_TIMEOUT":"SQUARE_REFUND_NETWORK",retrySameOperation:true,recorded:false},503);}
+   catch(error){const timedOut=error?.name==="TimeoutError"||error?.name==="AbortError";return json({error:timedOut?"Square Sandbox refund request timed out; outcome unknown":"Square Sandbox refund transport failed; outcome unknown",failureCode:timedOut?"SQUARE_REFUND_TIMEOUT":"SQUARE_REFUND_NETWORK",retrySameOperation:false,operationPending:true,recorded:false},503);}
    if(response.status>=300&&response.status<400)return json({error:"Square redirect blocked"},502);
    const data=await response.json().catch(()=>null);
    if(!response.ok)return json({error:"Square Sandbox refund request rejected",providerStatus:response.status,providerErrors:(data?.errors||[]).map(x=>x.code).slice(0,3)},409);
