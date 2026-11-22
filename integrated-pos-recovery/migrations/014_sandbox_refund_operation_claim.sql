@@ -10,3 +10,6 @@ CREATE TABLE IF NOT EXISTS pos_square_sandbox_refund_operations (
  created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pos_sandbox_refund_operations_tenant_sale ON pos_square_sandbox_refund_operations(tenant_id,sale_id);
+
+-- Only one unresolved refund per sale, even when operation IDs differ.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pos_sandbox_refund_one_pending_sale ON pos_square_sandbox_refund_operations(tenant_id,sale_id) WHERE status='pending';
