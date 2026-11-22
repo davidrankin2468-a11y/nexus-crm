@@ -66,7 +66,7 @@ export async function onRequest({request,env}){
 
    let response;
    try{response=await fetch("https://connect.squareupsandbox.com/v2/refunds",{method:"POST",redirect:"manual",signal:AbortSignal.timeout(12000),headers:{Authorization:"Bearer "+env.SQUARE_SANDBOX_ACCESS_TOKEN,"Square-Version":"2026-09-16","Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({idempotency_key:key,amount_money:{amount:v.amount_cents,currency:"USD"},payment_id:payment.provider_payment_id,reason:"Nexus CRM POS partial sandbox refund test"})});}
-   catch{return json({error:"Square Sandbox refund request timed out. Retry the SAME sale; idempotency prevents duplicate refunds."},503);}
+   catch(error){const timedOut=error?.name==="TimeoutError"||error?.name==="AbortError";return json({error:timedOut?"Square Sandbox refund request timed out; outcome unknown":"Square Sandbox refund transport failed; outcome unknown",failureCode:timedOut?"SQUARE_REFUND_TIMEOUT":"SQUARE_REFUND_NETWORK",retrySameOperation:true,recorded:false},503);}
    if(response.status>=300&&response.status<400)return json({error:"Square redirect blocked"},502);
    const data=await response.json().catch(()=>null);
    if(!response.ok)return json({error:"Square Sandbox refund request rejected",providerStatus:response.status,providerErrors:(data?.errors||[]).map(x=>x.code).slice(0,3)},409);
