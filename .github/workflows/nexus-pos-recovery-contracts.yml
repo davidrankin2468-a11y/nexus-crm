@@ -1,0 +1,29 @@
+name: Nexus POS recovery source contracts
+on:
+  push:
+    branches:
+      - recover-integrated-pos-worker-2026-11-21
+    paths:
+      - 'integrated-pos-recovery/**'
+      - '.github/workflows/nexus-pos-recovery-contracts.yml'
+  workflow_dispatch:
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run read-only sandbox refund source contracts
+        run: node --test integrated-pos-recovery/tests/refund-source-contract.test.mjs
+      - name: Check module syntax without invoking endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in integrated-pos-recovery/*.js; do
+            node --check "$file"
+          done
