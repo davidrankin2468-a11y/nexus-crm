@@ -1,4 +1,5 @@
 name: Nexus CRM POS dedicated preview GET smoke
+# Recheck after D1 and security binding repair
 on:
   push:
     branches: [recover-integrated-pos-worker-2026-11-21]
