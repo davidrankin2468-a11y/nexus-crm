@@ -93,8 +93,9 @@ export async function onRequest({request,env}){
    if(!/^[a-f0-9-]{36}$/i.test(v.operation_id||""))return json({error:"Stable refund operation ID required"},400);
    const sale=await db.prepare("SELECT status,total_cents,refunded_cents FROM pos_sales WHERE tenant_id=? AND id=?").bind(tenant,v.sale_id).first();
    if(!sale||!["completed","partially_refunded","refunded"].includes(sale.status))return json({error:"Paid sale not found"},404);
-   const existing=await db.prepare("SELECT tenant_id,sale_id,amount_cents FROM pos_refunds WHERE provider_refund_id=?").bind(v.refund_id).first();
-   if(existing)return existing.tenant_id===tenant&&existing.sale_id===v.sale_id&&existing.amount_cents===v.amount_cents?json({verified:true,recorded:true,duplicate:true,refund_id:v.refund_id,sale_id:v.sale_id,amount_cents:v.amount_cents}):json({error:"Refund ID already used"},409);
+   const existing=await db.prepare("SELECT tenant_id,sale_id,amount_cents,idempotency_key FROM pos_refunds WHERE provider_refund_id=?").bind(v.refund_id).first();
+   const expectedRefundKey="nxrf_"+v.operation_id.replace(/-/g,"").toLowerCase();
+   if(existing)return existing.tenant_id===tenant&&existing.sale_id===v.sale_id&&existing.amount_cents===v.amount_cents&&existing.idempotency_key===expectedRefundKey?json({verified:true,recorded:true,duplicate:true,refund_id:v.refund_id,sale_id:v.sale_id,amount_cents:v.amount_cents}):json({error:"Refund ID already used for another operation"},409);
    if(v.amount_cents>sale.total_cents-sale.refunded_cents)return json({error:"Refund exceeds remaining balance"},409);
    const payment=await db.prepare("SELECT provider_payment_id FROM pos_square_sandbox_payment_attempts WHERE tenant_id=? AND sale_id=? AND status='reconciled' AND provider_payment_id IS NOT NULL").bind(tenant,v.sale_id).first();
    if(!payment)return json({error:"Verified Square payment not found"},409);
