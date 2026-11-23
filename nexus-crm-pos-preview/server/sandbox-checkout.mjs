@@ -30,12 +30,15 @@ export function sandboxCheckout({ supabaseUrl, publishableKey, serviceKey, acces
         headers: { apikey: publishableKey, Authorization: bearer }, redirect: 'error'
       });
       if (!identity.ok) return reply({ error: 'Sign in to Nexus again.' }, 401);
-      const { id: owner } = await identity.json();
+      const { id: owner, email_confirmed_at: verified } = await identity.json();
+      if (!verified || typeof owner !== 'string' || !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(owner)) {
+        return reply({ error: 'A verified Nexus account is required.' }, 403);
+      }
       const query = new URLSearchParams({ owner_id: 'eq.' + owner, sale_id: 'eq.' + saleId, kind: 'eq.' + kind });
       const [workspace] = await database('/rest/v1/nexus_phase2_workspaces?' + new URLSearchParams({
         owner_id: 'eq.' + owner, select: 'records'
       }));
-      const receipt = workspace?.records.sales.find(sale => sale.id === saleId);
+      const receipt = workspace?.records?.sales?.find(sale => sale?.id === saleId);
       if (!receipt) return reply({ error: 'Receipt not found in your owner workspace.' }, 404);
       const cents = receipt.totalCents;
       if (!Number.isSafeInteger(cents) || cents <= 0 || cents > 100000) {

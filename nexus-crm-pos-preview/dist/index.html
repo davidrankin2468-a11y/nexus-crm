@@ -121,7 +121,7 @@ let receiptSearch = '';
 let selectedCustomer = '';
 const cart = new Map();
 function lineRow(line) {
-  return '<tr><td>'+escape(line.product)+'</td><td>'+line.quantity+'</td><td>'+money(line.unitCents)+'</td><td>'+money(line.totalCents)+'</td>';
+  return '<tr><td>'+escape(line.product)+'</td><td>'+escape(line.quantity)+'</td><td>'+money(line.unitCents)+'</td><td>'+money(line.totalCents)+'</td>';
 }
 function cartLines(current) {
   return Array.from(cart, ([productId, quantity]) => {
@@ -211,8 +211,8 @@ function pos() {
     '<label>Starting stock <input name="stock" type="number" min="0" max="999999" step="1" placeholder="Optional"></label>'+
     '<button class="primary">Save product</button></form></section><section class="card"><h2>Product list</h2>'+
     table(['Product','Price','Stock','Set stock'],state.products.map(p=>'<tr><td>'+escape(p.name)+'</td><td>'+money(p.cents)+'</td><td>'+
-      (p.stock ?? 'Untracked')+'</td><td><form data-form="stock"><input type="hidden" name="product" value="'+escape(p.id)+'">'+
-      '<input name="stock" type="number" min="0" max="999999" step="1" required aria-label="Stock for '+escape(p.name)+'" value="'+(p.stock ?? '')+'">'+
+      escape(p.stock ?? 'Untracked')+'</td><td><form data-form="stock"><input type="hidden" name="product" value="'+escape(p.id)+'">'+
+      '<input name="stock" type="number" min="0" max="999999" step="1" required aria-label="Stock for '+escape(p.name)+'" value="'+escape(p.stock ?? '')+'">'+
       '<button>Update stock</button></form></td></tr>'),'No products yet.')+'</section>';
   if (section === 'Receipts') {
     const receipt = state.sales.find(sale => sale.id === selectedReceipt);
@@ -229,7 +229,7 @@ function pos() {
   }
   const lines = cartLines(state);
   return '<section class="card"><h2>Checkout</h2><form data-form="add-line"><label>Product<select name="product" required>'+
-    state.products.map(p=>'<option value="'+escape(p.id)+'">'+escape(p.name)+' · '+money(p.cents)+(p.stock == null ? '' : ' · '+p.stock+' in stock')+'</option>').join('')+
+    state.products.map(p=>'<option value="'+escape(p.id)+'">'+escape(p.name)+' · '+money(p.cents)+(p.stock == null ? '' : ' · '+escape(p.stock)+' in stock')+'</option>').join('')+
     '</select></label>'+field('Quantity','quantity','type="number" min="1" max="999" step="1" value="1"')+
     '<button>Add to cart</button></form></section>'+
     '<section class="card"><h2>Cart</h2>'+table(['Product','Quantity','Unit price','Total','Action'],lines.map(line =>
