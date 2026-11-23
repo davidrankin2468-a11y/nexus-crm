@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus CRM + POS</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui,sans-serif;background:#081421;color:#eef5fb;--line:#314b5a;--lime:#adf68b;--muted:#a9becc}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;grid-template-columns:240px 1fr}
+aside{background:#101f2c;border-right:1px solid var(--line);padding:26px 18px}
+.brand{display:flex;gap:12px;align-items:center;margin-bottom:32px;font-weight:750}
+.mark{border:1px solid #71ad77;background:#223c38;color:var(--lime);border-radius:10px;padding:8px 12px}
+nav{display:flex;gap:8px;flex-wrap:wrap}aside nav{display:grid}
+button,input,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:10px 13px;color:inherit;background:#112232}
+button{cursor:pointer}button:disabled{cursor:default;opacity:.5}button:hover{border-color:var(--lime)}button[aria-current="page"]{background:#233d3d;color:var(--lime);border-color:#507c67}
+:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+aside button{text-align:left}main{width:100%;max-width:1180px;padding:30px clamp(16px,4vw,54px)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:17px}
+h1{margin:0;font-size:clamp(24px,4vw,38px)}h2{margin-top:0;font-size:21px}
+.tag{color:var(--lime);font-size:14px}p,label{color:var(--muted)}label{display:grid;gap:6px}
+.card{background:#13283a;border:1px solid var(--line);border-radius:13px;padding:20px;margin:18px 0;overflow:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px}
+metric{font-size:26px;color:var(--lime)}[hidden]{display:none!important}form,.row{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+input,select{max-width:100%}.primary{background:var(--lime);color:#10251b;border-color:var(--lime);font-weight:750}
+table{width:100%;border-collapse:collapse;text-align:left}td,th{padding:10px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th{color:var(--muted)}
+#status{min-height:1.3em;margin:14px 0;color:var(--lime)}.tabs{margin-bottom:14px}
+@media(max-width:680px){body{display:block}aside{border-right:0;border-bottom:1px solid var(--line);padding:15px}.brand{margin-bottom:12px}aside nav{display:flex}main{padding-top:20px}}
+@media print{
+  :root{color-scheme:light;background:white;color:black}
+  body,main{display:block;padding:0}
+  aside,header,#status,.tabs,#content>h2,.receipt-history,.receipt button,.receipt form{display:none}
+  .receipt{background:white;border:0;color:black;padding:0}
+  .receipt p,.receipt th,.receipt .tag{color:black}
+}
+</style>
+<aside>
+  <div class="brand"><span class="mark" aria-hidden="true">N</span> Nexus CRM + POS</div>
+  <nav id="navigation" aria-label="Workspace"></nav>
+</aside>
+<main>
+  <header><h1 id="heading">Dashboard</h1><span class="tag" id="workspace-label">Test workspace</span></header>
+  <p id="status" role="status"></p>
+  <div id="content"></div>
+</main>
+<script src="cloud.js"></script>
+<script>
+'use strict';
+const key = 'nexus-crm-pos-starter-v1';
+const initial = {
+  customers: [{id:'c1', name:'Jordan Lee', email:'jordan@example.test'}],
+  products: [{id:'p1', name:'Service consultation', cents:4500}],
+  sales: []
+};
+const read = () => JSON.parse(localStorage.getItem(key) || 'null') || structuredClone(initial);
+const recordGroups = ['customers','products','sales'];
+function hasRecords(records) {
+  return recordGroups.some(group => records[group].length > 0);
+}
+function savedLocalRecords() {
+  const records = JSON.parse(localStorage.getItem(key) || 'null');
+  if (!records || !recordGroups.every(group => Array.isArray(records[group]))) return null;
+  return records;
+}
+
+const money = cents => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents / 100);
+const escape = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const id = () => crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8,'0')).join('');
+const content = document.getElementById('content');
+const status = document.getElementById('status');
+const pages = ['Dashboard','Customers','Operations','Finance','Settings'];
+const sections = ['Checkout','Inventory','Receipts'];
+const confirmationUrl = new URL(location.href);
+const fromConfirmation = confirmationUrl.searchParams.get('confirmed') === '1';
+const confirmationFailed = confirmationUrl.searchParams.has('error');
+const fromRecovery = confirmationUrl.searchParams.get('recovery') === '1';
+const recoveryCode = fromRecovery ? confirmationUrl.searchParams.get('code') : null;
+if (fromConfirmation || fromRecovery) history.replaceState(null,'',confirmationUrl.pathname);
+let page = fromConfirmation || fromRecovery ? 'Settings' : 'Dashboard';
+let accountMode = 'sign-in';
+let workspace = null;
+let availableWorkspaces = [];
+let staffGrants = [];
+let staffLoadFailed = false;
+const staffView = () => workspace && !workspace.owned;
+function workspaceSettings() {
+  const picker = availableWorkspaces.length ? '<form data-form="cloud-switch"><label>Workspace<select name="owner" required>'+
+    availableWorkspaces.map(item => '<option value="'+escape(item.owner_id)+'"'+(item.owner_id === workspace?.owner_id ? ' selected' : '')+'>'+
+      escape(item.business_name)+(item.owned ? ' · Owner' : ' · Read-only staff')+'</option>').join('')+
+    '</select></label><button>Open workspace</button></form>' : '';
+  const create = availableWorkspaces.some(item => item.owned) ? '' :
+    '<form data-form="workspace-create">'+field('Business name','name','maxlength="100"')+'<button>Create own workspace</button></form>';
+  const refresh = '<form data-form="cloud-refresh"><button>Refresh workspace</button></form>';
+  const localImport = workspace?.owned && !hasRecords(workspace.records) ?
+    '<form data-form="import-local"><button>Copy local test records</button></form>' : '';
+  const staffControls = workspace?.owned ? '<h2>Staff access</h2><p>Grant read-only access to a verified Nexus email. Share the preview link separately with staff who have access to the private site.</p>'+
+    '<form data-form="staff-grant"><label>Staff email<input name="email" type="email" maxlength="150" required></label><button>Grant read-only access</button></form>'+
+    (staffLoadFailed ? '<p>Could not load current grants. Use Refresh workspace to retry.</p>' :
+      table(['Email','Access'],staffGrants.map(({email})=>'<tr><td>'+escape(email)+'</td><td><form data-form="staff-revoke">'+
+      '<input type="hidden" name="email" value="'+escape(email)+'"><button aria-label="Revoke access for '+escape(email)+'">Revoke access</button></form></td></tr>'),'No staff access granted.')) : '';
+  return picker+create+refresh+localImport+staffControls+'<form data-form="sign-out"><button>Sign out</button></form>';
+}
+async function loadStaff() {
+  staffGrants = [];
+  staffLoadFailed = false;
+  if (!workspace?.owned) return;
+  try { staffGrants = await cloud.staff(workspace.owner_id); }
+  catch { staffLoadFailed = true; }
+}
+function resetWorkspaceView() {
+  cart.clear();
+  selectedReceipt = selectedCustomer = receiptSearch = editingCustomer = customerSearch = '';
+}
+function localState() {
+  try { return read(); } catch { return structuredClone(initial); }
+}
+let submitting = false;
+let section = 'Checkout';
+let selectedReceipt = '';
+let editingCustomer = '';
+let customerSearch = '';
+let receiptSearch = '';
+let selectedCustomer = '';
+const cart = new Map();
+function lineRow(line) {
+  return '<tr><td>'+escape(line.product)+'</td><td>'+line.quantity+'</td><td>'+money(line.unitCents)+'</td><td>'+money(line.totalCents)+'</td>';
+}
+function cartLines(current) {
+  return Array.from(cart, ([productId, quantity]) => {
+    const product = current.products.find(item => item.id === productId);
+    if (!product) throw Error('A product in the cart is unavailable.');
+    return {id:productId,product:product.name,quantity,unitCents:product.cents,totalCents:product.cents*quantity};
+  });
+}
+const total = lines => lines.reduce((sum,line) => sum + line.totalCents,0);
+let storageError = '';
+let state;
+try { state = read(); } catch { state = structuredClone(initial); storageError = 'Browser storage is unavailable or unreadable. Changes cannot be saved.'; }
+function button(group, name, selected) {
+  return '<button type="button" data-' + group + '="' + name + '"' + (selected ? ' aria-current="page"' : '') + '>' + name + '</button>';
+}
+function table(headings, rows, empty) {
+  return rows.length ? '<table><thead><tr>' + headings.map(h => '<th scope="col">'+h+'</th>').join('') +
+    '</tr></thead><tbody>' + rows.join('') + '</tbody></table>' : '<p>'+empty+'</p>';
+}
+function field(label, name, attributes) {
+  return '<label>'+label+'<input name="'+name+'" required '+attributes+'></label>';
+}
+function customerPage() {
+  const editing = state.customers.find(customer => customer.id === editingCustomer);
+  const query = customerSearch.toLowerCase();
+  const matches = state.customers.filter(customer =>
+    [customer.name,customer.email || ''].some(value => value.toLowerCase().includes(query)));
+  return '<section class="card"><h2>'+(editing ? 'Edit customer' : 'Add customer')+'</h2><form data-form="customer">'+
+    '<input type="hidden" name="customer" value="'+escape(editing?.id || '')+'">'+
+    field('Name','name','maxlength="100" value="'+escape(editing?.name || '')+'"')+
+    '<label>Email <input name="email" type="email" maxlength="150" value="'+escape(editing?.email || '')+'"></label>'+
+    '<button class="primary">Save customer</button>'+(editing ? '<button type="button" data-edit-customer="cancel">Cancel</button>' : '')+
+    '</form></section><section class="card"><h2>Customer list</h2><form data-form="customer-search">'+
+    '<label>Find by name or email<input name="query" type="search" maxlength="150" value="'+escape(customerSearch)+'"></label>'+
+    '<button>Search</button><button type="button" data-clear-customer-search="yes">Clear</button></form>'+
+    table(['Name','Email','Action'],matches.map(customer =>
+      '<tr><td>'+escape(customer.name)+'</td><td>'+escape(customer.email || '—')+'</td><td>'+
+      '<button type="button" data-edit-customer="'+escape(customer.id)+'" aria-label="Edit '+escape(customer.name)+'">Edit</button></td></tr>'),
+      query ? 'No customers match your search.' : 'No customers yet.')+'</section>';
+}
+function render() {
+  document.getElementById('heading').textContent = page;
+  document.getElementById('workspace-label').textContent = workspace ? workspace.business_name + (staffView() ? ' · Read-only staff' : ' · Test workspace') : 'Local test workspace';
+  document.getElementById('navigation').innerHTML = pages.map(name => button('page', name, page === name)).join('');
+  if (page === 'Dashboard') {
+    content.innerHTML = '<div class="cards">' + [['Customers',state.customers.length],['Products',state.products.length],['Test sales',state.sales.length],['Test sales total',money(total(state.sales))]].map(([title,value]) =>
+      '<section class="card"><h2>'+title+'</h2><strong class="tag">'+value+'</strong></section>').join('') + '</div><button class="primary" data-page="Finance">Open Finance &rarr; POS</button>';
+  } else if (page === 'Customers') {
+    content.innerHTML = customerPage();
+  } else if (page === 'Finance') {
+    content.innerHTML = '<h2>Point of Sale</h2><nav class="tabs" aria-label="POS">'+sections.map(name => button('section',name,section === name)).join('')+'</nav>' + pos();
+  } else if (page === 'Operations') {
+    content.innerHTML = '<section class="card"><h2>Operations</h2><p>Jobs and scheduling are outside this first checkout build.</p></section>';
+  } else {
+    const account = !cloud.signedIn()
+      ? (accountMode === 'reset'
+        ? '<form data-form="reset-request"><label>Email<input name="email" type="email" autocomplete="email" required></label><button class="primary">Send reset email</button><button type="button" data-account="sign-in">Back to sign in</button></form>'+
+          '<form data-form="reset-link"><label>Reset page URL<input name="link" type="url" required></label><button>Continue reset</button></form><p>If the email link opens a page that will not load, copy the address from that page and paste it here.</p>'
+        : accountMode === 'new-password'
+        ? '<form data-form="reset-password"><label>New password<input name="password" type="password" autocomplete="new-password" minlength="12" required></label><label>Confirm new password<input name="confirm" type="password" autocomplete="new-password" minlength="12" required></label><button class="primary">Save new password</button></form>'
+        : accountMode === 'signup'
+        ? '<form data-form="signup"><label>Email<input name="email" type="email" autocomplete="email" required></label><label>Password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="72" required></label><button class="primary">Create account</button><button type="button" data-account="sign-in">Back to sign in</button></form>'
+        : '<form data-form="sign-in"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary">Sign in</button><button type="button" data-account="signup">Create an account</button><button type="button" data-account="reset">Forgot password</button></form>')
+      : workspaceSettings();
+    content.innerHTML = '<section class="card"><h2>Business cloud workspace</h2><p>Sign in or create an account for this private preview. A new workspace starts empty. Local sample records stay in this browser.</p>'+account+'</section>';
+  }
+  if (staffView()) {
+    for (const element of content.querySelectorAll('[data-form="customer"],[data-edit-customer],[data-form="product"],[data-form="stock"],[data-form="add-line"],[data-form="sale"]')) {
+      element.hidden = true;
+    }
+  }
+}
+function filteredSales() {
+  const query = receiptSearch.toLowerCase();
+  return state.sales.slice().reverse().filter(sale =>
+    sale.customer.toLowerCase().includes(query) || sale.id.toLowerCase().includes(query));
+}
+function sandboxReceiptActions(receipt) {
+  if (!workspace?.owned) return '';
+  return '<form data-form="sandbox-action"><input type="hidden" name="saleId" value="'+escape(receipt.id)+'">'+
+    '<label>Square Sandbox<select name="action"><option value="payment">Run test payment</option>'+
+    '<option value="refund">Run full test refund</option></select></label><button>Run Sandbox action</button></form>';
+}
+function pos() {
+  if (section === 'Inventory') return '<section class="card"><h2>Add product</h2><form data-form="product">'+
+    field('Product name','name','maxlength="100"')+field('Price (USD)','price','inputmode="decimal" placeholder="25.00" maxlength="10"')+
+    '<label>Starting stock <input name="stock" type="number" min="0" max="999999" step="1" placeholder="Optional"></label>'+
+    '<button class="primary">Save product</button></form></section><section class="card"><h2>Product list</h2>'+
+    table(['Product','Price','Stock','Set stock'],state.products.map(p=>'<tr><td>'+escape(p.name)+'</td><td>'+money(p.cents)+'</td><td>'+
+      (p.stock ?? 'Untracked')+'</td><td><form data-form="stock"><input type="hidden" name="product" value="'+escape(p.id)+'">'+
+      '<input name="stock" type="number" min="0" max="999999" step="1" required aria-label="Stock for '+escape(p.name)+'" value="'+(p.stock ?? '')+'">'+
+      '<button>Update stock</button></form></td></tr>'),'No products yet.')+'</section>';
+  if (section === 'Receipts') {
+    const receipt = state.sales.find(sale => sale.id === selectedReceipt);
+    return (receipt ? '<section class="card receipt"><h2>Test receipt '+escape(receipt.id.slice(0,8))+'</h2><p>'+escape(new Date(receipt.date).toLocaleString())+'</p><p>Customer: '+escape(receipt.customer)+'</p>'+
+      table(['Product','Quantity','Unit price','Total'],(receipt.lines || [receipt]).map(line => lineRow(line)+'</tr>'),'')+
+      '<p><strong>Total '+money(receipt.totalCents)+'</strong></p><p class="tag">Test sale · No payment collected</p><button type="button" data-print="receipt">Print receipt</button>'+sandboxReceiptActions(receipt)+'</section>' : '')+
+      '<section class="card receipt-history"><h2>Test sales</h2><form data-form="receipt-search">'+
+      '<label>Find by customer or receipt number<input type="search" name="query" maxlength="100" value="'+escape(receiptSearch)+'"></label>'+
+      '<button>Search</button><button type="button" data-clear-search="yes">Clear</button></form>'+
+      table(['Receipt','Date','Customer','Total'],filteredSales().map(sale =>
+        '<tr><td><button type="button" data-receipt="'+escape(sale.id)+'">'+escape(sale.id.slice(0,8))+'</button></td><td>'+
+        escape(new Date(sale.date).toLocaleDateString())+'</td><td>'+escape(sale.customer)+'</td><td>'+money(sale.totalCents)+'</td></tr>'),
+        receiptSearch ? 'No receipts match your search.' : 'No test sales yet.')+'</section>';
+  }
+  const lines = cartLines(state);
+  return '<section class="card"><h2>Checkout</h2><form data-form="add-line"><label>Product<select name="product" required>'+
+    state.products.map(p=>'<option value="'+escape(p.id)+'">'+escape(p.name)+' · '+money(p.cents)+(p.stock == null ? '' : ' · '+p.stock+' in stock')+'</option>').join('')+
+    '</select></label>'+field('Quantity','quantity','type="number" min="1" max="999" step="1" value="1"')+
+    '<button>Add to cart</button></form></section>'+
+    '<section class="card"><h2>Cart</h2>'+table(['Product','Quantity','Unit price','Total','Action'],lines.map(line =>
+      lineRow(line)+'<td><button type="button" data-remove="'+escape(line.id)+'" aria-label="Remove '+escape(line.product)+'">Remove</button></td></tr>'),'Your cart is empty.')+
+    '<p><strong>Total '+money(total(lines))+'</strong></p><form data-form="sale"><label>Customer<select name="customer" required>'+
+    state.customers.map(c=>'<option value="'+escape(c.id)+'"'+(c.id === selectedCustomer ? ' selected' : '')+'>'+escape(c.name)+'</option>').join('')+
+    '</select></label><button class="primary"'+(lines.length ? '' : ' disabled')+'>Record test sale</button></form><p>Test transactions create a receipt without collecting payment.</p></section>';
+}
+document.addEventListener('click', event => {
+  const target = event.target.closest('button');
+  if (!target) return;
+  const {page: nextPage, section: nextSection, receipt, remove} = target.dataset;
+  if (target.dataset.account) {
+    accountMode = target.dataset.account;
+    status.textContent = '';
+    render();
+    document.querySelector('input[name="email"]').focus();
+    return;
+  }
+  if (target.dataset.print === 'receipt') {
+    window.print();
+    return;
+  }
+  if (target.dataset.editCustomer) editingCustomer = target.dataset.editCustomer === 'cancel' ? '' : target.dataset.editCustomer;
+  else if (target.dataset.clearCustomerSearch) customerSearch = '';
+  else if (target.dataset.clearSearch) receiptSearch = '';
+  else if (nextPage) page = nextPage;
+  else if (nextSection) section = nextSection;
+  else if (receipt) selectedReceipt = receipt;
+  else if (remove) cart.delete(remove);
+  else return;
+  status.textContent = storageError;
+  render();
+  if (target.dataset.editCustomer) document.querySelector('input[name="name"]').focus();
+  if (nextPage) document.querySelector('aside [aria-current]').focus();
+  else if (nextSection) document.querySelector('.tabs [aria-current]').focus();
+});
+function stockCount(value) {
+  if (!/^\d{1,6}$/.test(value)) throw Error('Enter a stock count from 0 to 999999.');
+  return Number(value);
+}
+function checkStock(product, quantity) {
+  if (product.stock != null && quantity > product.stock) {
+    throw Error(product.name + ' has only ' + product.stock + ' in stock.');
+  }
+}
+function record(kind, data, current) {
+  const name = data.name?.trim();
+  if (kind === 'customer') {
+    if (!name) throw Error('Enter a customer name.');
+    const email = data.email.trim();
+    if (data.customer) {
+      const customer = current.customers.find(item => item.id === data.customer);
+      if (!customer) throw Error('That customer could not be found.');
+      Object.assign(customer,{name,email});
+    } else current.customers.push({id:id(),name,email});
+    return 'Customer saved.';
+  }
+  if (kind === 'product') {
+    if (!name || !/^\d{1,7}(\.\d{1,2})?$/.test(data.price.trim())) throw Error('Enter a product name and a price such as 25.00.');
+    const [dollars, fraction = ''] = data.price.trim().split('.');
+    const cents = Number(dollars) * 100 + Number(fraction.padEnd(2,'0'));
+    if (!cents) throw Error('Enter a price greater than zero.');
+    const stock = data.stock === '' ? null : stockCount(data.stock);
+    current.products.push({id:id(),name,cents,stock});
+    return 'Product saved.';
+  }
+  if (kind === 'stock') {
+    const product = current.products.find(item => item.id === data.product);
+    if (!product) throw Error('That product could not be found.');
+    product.stock = stockCount(data.stock);
+    return 'Stock updated.';
+  }
+  const customer = current.customers.find(c => c.id === data.customer);
+  const lines = cartLines(current);
+  if (!customer || !lines.length) throw Error('Select a customer and add at least one product.');
+  for (const line of lines) {
+    const product = current.products.find(item => item.id === line.id);
+    checkStock(product, line.quantity);
+    if (product.stock != null) product.stock -= line.quantity;
+  }
+  current.sales.push({id:id(),date:new Date().toISOString(),customer:customer.name,lines,totalCents:total(lines)});
+  return 'Test sale recorded.';
+}
+document.addEventListener('change', event => {
+  if (event.target.matches('form[data-form="sale"] select[name="customer"]')) selectedCustomer = event.target.value;
+});
+document.addEventListener('submit', async event => {
+  const kind = event.target.dataset.form;
+  if (!kind) return;
+  const recordActions = ['customer','product','stock','add-line','sale','import-local','staff-grant','staff-revoke','sandbox-action'];
+  if (staffView() && recordActions.includes(kind)) {
+    event.preventDefault();
+    status.textContent = 'Staff access is read-only.';
+    return;
+  }
+  event.preventDefault();
+  if (submitting) return;
+  submitting = true;
+  const submitter = event.submitter;
+  if (submitter) submitter.disabled = true;
+  try {
+    const data = Object.fromEntries(new FormData(event.target));
+    if (kind === 'sandbox-action') {
+      if (!workspace?.owned) throw Error('Open your own cloud workspace.');
+      const result = await cloud.sandboxAction(data.saleId,data.action);
+      status.textContent = (data.action === 'refund' ? 'Sandbox refund' : 'Sandbox payment')+
+        (result === 'pending' ? ' is pending with Square.' : ' completed.');
+      return;
+    }
+    if (kind === 'customer-search') {
+      customerSearch = data.query.trim();
+      render();
+      document.querySelector('input[name="query"]').focus();
+      return;
+    }
+    if (kind === 'receipt-search') {
+      receiptSearch = data.query.trim();
+      render();
+      document.querySelector('input[name="query"]').focus();
+      return;
+    }
+    if (kind === 'reset-request') {
+      await cloud.requestReset(data.email.trim());
+      status.textContent = 'If the account exists, check your inbox and spam folder. Open the link in this browser.';
+      return;
+    }
+    if (kind === 'reset-link') {
+      const link = new URL(data.link);
+      await cloud.openReset(link.searchParams.get('code'));
+      accountMode = 'new-password';
+      render();
+      status.textContent = 'Set a new Nexus password.';
+      return;
+    }
+    if (kind === 'reset-password') {
+      if (data.password.length < 12 || new TextEncoder().encode(data.password).length > 72 || data.password !== data.confirm) {
+        throw Error('Enter matching passwords with at least 12 characters and at most 72 bytes.');
+      }
+      await cloud.changePassword(data.password);
+      accountMode = 'sign-in';
+      render();
+      status.textContent = 'Password updated. Sign in with your new Nexus password.';
+      return;
+    }
+    if (kind === 'signup') {
+      if (data.password.length < 12 || new TextEncoder().encode(data.password).length > 72) {
+        throw Error('Choose a password with at least 12 characters and at most 72 bytes.');
+      }
+      const ready = await cloud.register(data.email.trim(),data.password);
+      accountMode = 'sign-in';
+      render();
+      status.textContent = ready ? 'Account created. Sign in to continue.' :
+        'Check your email for a confirmation link, then return here to sign in.';
+      return;
+    }
+    if (kind === 'import-local') {
+      if (!workspace) throw Error('Create or open a cloud workspace first.');
+      const records = savedLocalRecords();
+      if (!records || !hasRecords(records)) throw Error('This browser has no saved local records to copy.');
+      const latest = await cloud.read(workspace.owner_id);
+      if (!latest || hasRecords(latest.records)) throw Error('Copying requires an empty cloud workspace.');
+      workspace = await cloud.save(latest,records);
+      state = workspace.records;
+      cart.clear();
+      selectedReceipt = selectedCustomer = receiptSearch = editingCustomer = customerSearch = '';
+      render();
+      status.textContent = 'Copied local test records. The originals are still in this browser.';
+      return;
+    }
+    if (kind === 'staff-grant' || kind === 'staff-revoke') {
+      if (!workspace?.owned) throw Error('Open your own workspace to manage staff.');
+      const email = data.email.trim().toLowerCase();
+      if (kind === 'staff-grant') await cloud.grantStaff(email);
+      else await cloud.revokeStaff(workspace.owner_id,email);
+      await loadStaff();
+      render();
+      status.textContent = kind === 'staff-grant' ? 'Read-only access saved for this email.' : 'Staff access revoked.';
+      return;
+    }
+    if (['sign-in','workspace-create','cloud-refresh','cloud-switch','sign-out'].includes(kind)) {
+      if (kind === 'sign-out') {
+        workspace = null;
+        availableWorkspaces = [];
+        staffGrants = [];
+        resetWorkspaceView();
+        state = localState();
+        const logout = cloud.signOut();
+        render();
+        await logout.catch(() => {});
+        status.textContent = 'Signed out. Local sample workspace is open.';
+        return;
+      }
+      if (kind === 'sign-in') {
+        await cloud.signIn(data.email,data.password);
+        event.target.reset();
+      }
+      if (kind === 'workspace-create' && !data.name.trim()) throw Error('Enter a business name.');
+      const created = kind === 'workspace-create' ? await cloud.create(data.name.trim()) : null;
+      availableWorkspaces = await cloud.list();
+      const owner = created?.owner_id || (kind === 'cloud-switch' ? data.owner : workspace?.owner_id) ||
+        availableWorkspaces.find(item => item.owned)?.owner_id || availableWorkspaces[0]?.owner_id;
+      const next = owner ? await cloud.read(owner) : null;
+      if (workspace?.owner_id !== next?.owner_id) resetWorkspaceView();
+      workspace = next;
+      state = next ? next.records : localState();
+      await loadStaff();
+      render();
+      status.textContent = next ? 'Cloud workspace loaded.' : 'No workspace is available for this account.';
+      return;
+    }
+    const update = async () => {
+      const current = workspace ? structuredClone(workspace.records) : read();
+      if (kind === 'add-line') {
+        const quantity = Number(data.quantity);
+        const combined = quantity + (cart.get(data.product) || 0);
+        const product = current.products.find(item => item.id === data.product);
+        if (!product || !Number.isInteger(quantity) || quantity < 1 || combined > 999) {
+          throw Error('Select a product and keep its cart quantity between 1 and 999.');
+        }
+        checkStock(product, combined);
+        cart.set(data.product, combined);
+        state = current;
+        render();
+        status.textContent = 'Product added to cart.';
+        return;
+      }
+      const message = record(kind,data,current);
+      if (workspace) workspace = await cloud.save(workspace,current);
+      else localStorage.setItem(key,JSON.stringify(current));
+      state = current;
+      if (kind === 'customer') editingCustomer = '';
+      if (kind === 'sale') {
+        selectedReceipt = state.sales.at(-1).id;
+        receiptSearch = '';
+        cart.clear();
+        section = 'Receipts';
+      }
+      render();
+      status.textContent = message;
+    };
+    if (navigator.locks) await navigator.locks.request(key, update);
+    else await update();
+  } catch (error) {
+    status.textContent = error instanceof DOMException ? 'The browser could not save this change.' : error.message;
+    if (kind === 'sign-in' && cloud.signedIn()) render();
+  } finally {
+    submitting = false;
+    if (submitter) submitter.disabled = false;
+  }
+});
+status.textContent = fromConfirmation
+  ? (confirmationFailed ? 'The confirmation link could not be used. Request a new link by creating an account again.' : 'Sign in to open your workspace after confirming your email.')
+  : storageError;
+render();
+if (fromRecovery) {
+  status.textContent = 'Checking your password reset link…';
+  cloud.openReset(recoveryCode).then(() => {
+    accountMode = 'new-password';
+    render();
+    status.textContent = 'Set a new Nexus password.';
+  }).catch(error => {
+    accountMode = 'reset';
+    render();
+    status.textContent = error.message;
+  });
+}
+</script>
+</html>
